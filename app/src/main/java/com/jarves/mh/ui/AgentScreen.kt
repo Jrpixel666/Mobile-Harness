@@ -851,7 +851,6 @@ fun AgentScreen(
                                 val shortTitle = when (agent) {
                                     AgentKind.ANTIGRAVITY -> "Antigravity"
                                     AgentKind.DEEPSEEK_HARNESS -> "DeepSeek"
-                                    AgentKind.CLAUDE_CODE -> "Claude Code"
                                 }
                                 Surface(
                                     shape = RoundedCornerShape(12.dp),
@@ -944,7 +943,6 @@ fun AgentScreen(
                     } else if (!viewedAgentInstalled) {
                         val viewedAgentTitle = stringResource(
                             when (viewedAgent) {
-                                AgentKind.CLAUDE_CODE -> R.string.agent_title_claude
                                 AgentKind.DEEPSEEK_HARNESS -> R.string.agent_title_deepseek
                                 AgentKind.ANTIGRAVITY -> R.string.agent_title_antigravity
                             },
@@ -1112,15 +1110,7 @@ fun AgentScreen(
                                     openRouterProviderOrder = openRouterProviderOrder,
                                     openRouterAllowFallbacks = openRouterAllowFallbacks,
                                 )
-                                if (kind == ProviderKind.CLAUDE) {
-                                    onSaveProvider(profile, apiKey.trim())
-                                    status = context.getString(R.string.st_claude_token_saved_status)
-                                    statusOk = true
-                                    activeKeyId?.let {
-                                        keyConnectionStatuses = keyConnectionStatuses +
-                                            (it to KeyConnectionStatus(context.getString(R.string.st_subscription_token_saved), true, label = context.getString(R.string.st_saved)))
-                                    }
-                                } else when (val result = onValidateProvider(profile, apiKey.trim(), models)) {
+                                when (val result = onValidateProvider(profile, apiKey.trim(), models)) {
                                     is ConnectionValidation.Success -> {
                                         onSaveProvider(profile, apiKey.trim())
                                         if (activeKeyId != null) {
@@ -1619,92 +1609,90 @@ private fun AgentProviderCard(
                 }
             }
 
-            if (selectedKind != ProviderKind.CLAUDE) {
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
 
-                PremiumSummaryRow(
-                    icon = Icons.Default.Info,
-                    title = stringResource(if (selectedKind == ProviderKind.CUSTOM) R.string.agent_custom_api_settings else R.string.agent_endpoint_protocol),
-                    subtitle = buildString {
-                        append(baseUrl.ifBlank { stringResource(R.string.st_base_url_required) })
-                        if (state.agentKind == AgentKind.DEEPSEEK_HARNESS && selectedKind in DSH_PROTOCOL_PROVIDERS) {
-                            append(" · ")
-                            append(if (selectedKind.fixedProtocol) defaultDshApiForProvider(selectedKind) else dshApi)
-                        }
-                    },
-                    expanded = endpointExpanded,
-                    onClick = { endpointExpanded = !endpointExpanded },
-                )
+            PremiumSummaryRow(
+                icon = Icons.Default.Info,
+                title = stringResource(if (selectedKind == ProviderKind.CUSTOM) R.string.agent_custom_api_settings else R.string.agent_endpoint_protocol),
+                subtitle = buildString {
+                    append(baseUrl.ifBlank { stringResource(R.string.st_base_url_required) })
+                    if (state.agentKind == AgentKind.DEEPSEEK_HARNESS && selectedKind in DSH_PROTOCOL_PROVIDERS) {
+                        append(" · ")
+                        append(if (selectedKind.fixedProtocol) defaultDshApiForProvider(selectedKind) else dshApi)
+                    }
+                },
+                expanded = endpointExpanded,
+                onClick = { endpointExpanded = !endpointExpanded },
+            )
 
-                AnimatedVisibility(endpointExpanded) {
-                    Column(
-                        modifier = Modifier.padding(top = 8.dp, bottom = 10.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        if (selectedKind == ProviderKind.CUSTOM) {
-                            Text(
-                                stringResource(R.string.st_custom_endpoint_hint),
-                                fontSize = 11.sp,
-                                lineHeight = 15.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
+            AnimatedVisibility(endpointExpanded) {
+                Column(
+                    modifier = Modifier.padding(top = 8.dp, bottom = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    if (selectedKind == ProviderKind.CUSTOM) {
+                        Text(
+                            stringResource(R.string.st_custom_endpoint_hint),
+                            fontSize = 11.sp,
+                            lineHeight = 15.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    OutlinedTextField(
+                        value = baseUrl,
+                        onValueChange = { if (!selectedKind.fixedBaseUrl) onBaseUrl(it) },
+                        label = { Text(stringResource(R.string.provider_base_url)) },
+                        supportingText = if (selectedKind.fixedBaseUrl) ({ Text(stringResource(R.string.provider_fixed_by, stringResource(selectedKind.titleRes()))) }) else null,
+                        readOnly = selectedKind.fixedBaseUrl,
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                    )
+                    if (selectedKind == ProviderKind.LLM_ROUTER) {
                         OutlinedTextField(
-                            value = baseUrl,
-                            onValueChange = { if (!selectedKind.fixedBaseUrl) onBaseUrl(it) },
-                            label = { Text(stringResource(R.string.provider_base_url)) },
-                            supportingText = if (selectedKind.fixedBaseUrl) ({ Text(stringResource(R.string.provider_fixed_by, stringResource(selectedKind.titleRes()))) }) else null,
-                            readOnly = selectedKind.fixedBaseUrl,
+                            value = openRouterProviderOrder,
+                            onValueChange = onOpenRouterProviderOrder,
+                            label = { Text(stringResource(R.string.st_provider_order)) },
+                            placeholder = { Text("exacto, together") },
+                            supportingText = {
+                                Text(stringResource(R.string.st_provider_order_help))
+                            },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(12.dp),
                         )
-                        if (selectedKind == ProviderKind.LLM_ROUTER) {
-                            OutlinedTextField(
-                                value = openRouterProviderOrder,
-                                onValueChange = onOpenRouterProviderOrder,
-                                label = { Text(stringResource(R.string.st_provider_order)) },
-                                placeholder = { Text("exacto, together") },
-                                supportingText = {
-                                    Text(stringResource(R.string.st_provider_order_help))
-                                },
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(12.dp),
-                            )
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Column(Modifier.weight(1f)) {
-                                    Text(stringResource(R.string.st_allow_provider_fallbacks), fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                                    Text(
-                                        stringResource(R.string.st_allow_provider_fallbacks_help),
-                                        fontSize = 11.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                                Switch(
-                                    checked = openRouterAllowFallbacks,
-                                    onCheckedChange = onOpenRouterAllowFallbacks,
-                                    enabled = openRouterProviderOrder.isNotBlank(),
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(stringResource(R.string.st_allow_provider_fallbacks), fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                                Text(
+                                    stringResource(R.string.st_allow_provider_fallbacks_help),
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
+                            Switch(
+                                checked = openRouterAllowFallbacks,
+                                onCheckedChange = onOpenRouterAllowFallbacks,
+                                enabled = openRouterProviderOrder.isNotBlank(),
+                            )
                         }
-                        if (state.agentKind == AgentKind.DEEPSEEK_HARNESS && selectedKind in DSH_PROTOCOL_PROVIDERS && !selectedKind.fixedProtocol) {
-                            Column(modifier = Modifier.fillMaxWidth()) {
-                                Text(stringResource(R.string.provider_gateway_protocol), fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Spacer(Modifier.height(5.dp))
-                                Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f)) {
-                                    Column {
-                                        listOf("anthropic-messages", "openai-completions", "openai-responses").forEach { option ->
-                                            Row(
-                                                Modifier.fillMaxWidth().clickable { onDshApi(option) }.padding(horizontal = 12.dp, vertical = 9.dp),
-                                                verticalAlignment = Alignment.CenterVertically,
-                                            ) {
-                                                Text(option, Modifier.weight(1f), fontSize = 12.sp, fontFamily = FontFamily.Monospace)
-                                                AgentSelectionDot(dshApi == option)
-                                            }
+                    }
+                    if (state.agentKind == AgentKind.DEEPSEEK_HARNESS && selectedKind in DSH_PROTOCOL_PROVIDERS && !selectedKind.fixedProtocol) {
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            Text(stringResource(R.string.provider_gateway_protocol), fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Spacer(Modifier.height(5.dp))
+                            Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f)) {
+                                Column {
+                                    listOf("anthropic-messages", "openai-completions", "openai-responses").forEach { option ->
+                                        Row(
+                                            Modifier.fillMaxWidth().clickable { onDshApi(option) }.padding(horizontal = 12.dp, vertical = 9.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                        ) {
+                                            Text(option, Modifier.weight(1f), fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+                                            AgentSelectionDot(dshApi == option)
                                         }
                                     }
                                 }
@@ -1712,38 +1700,30 @@ private fun AgentProviderCard(
                         }
                     }
                 }
+            }
 
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(stringResource(R.string.agent_model_access), fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                    Text(
-                        if (isDiscovering) stringResource(R.string.agent_discovering) else if (models.isEmpty()) stringResource(R.string.agent_discover_models) else stringResource(R.string.agent_models_count, models.size),
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = PocketOrange,
-                        modifier = Modifier.clickable(enabled = !isDiscovering, onClick = onDiscover).padding(6.dp),
-                    )
-                }
-
-                PremiumSummaryRow(
-                    icon = Icons.Default.AutoAwesome,
-                    title = stringResource(R.string.agent_ai_model),
-                    subtitle = model.ifBlank { stringResource(R.string.agent_select_model) },
-                    expanded = false,
-                    onClick = onOpenModelSheet,
-                )
-            } else {
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(stringResource(R.string.agent_model_access), fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                 Text(
-                    stringResource(R.string.st_claude_setup_token_hint),
-                    fontSize = 12.sp,
-                    lineHeight = 17.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(vertical = 12.dp),
+                    if (isDiscovering) stringResource(R.string.agent_discovering) else if (models.isEmpty()) stringResource(R.string.agent_discover_models) else stringResource(R.string.agent_models_count, models.size),
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = PocketOrange,
+                    modifier = Modifier.clickable(enabled = !isDiscovering, onClick = onDiscover).padding(6.dp),
                 )
             }
+
+            PremiumSummaryRow(
+                icon = Icons.Default.AutoAwesome,
+                title = stringResource(R.string.agent_ai_model),
+                subtitle = model.ifBlank { stringResource(R.string.agent_select_model) },
+                expanded = false,
+                onClick = onOpenModelSheet,
+            )
 
             if (status != null) {
                 Column(modifier = Modifier.padding(start = 48.dp, end = 8.dp, bottom = 8.dp)) {
@@ -1762,9 +1742,9 @@ private fun AgentProviderCard(
 
             PremiumSummaryRow(
                 icon = Icons.Default.Key,
-                title = stringResource(if (selectedKind == ProviderKind.CLAUDE) R.string.agent_subscription_token else R.string.agent_credentials),
+                title = stringResource(R.string.agent_credentials),
                 subtitle = buildString {
-                    append(activeKey?.name ?: if (selectedKind == ProviderKind.CLAUDE) stringResource(R.string.st_no_subscription_token_saved) else stringResource(R.string.st_no_api_key_saved))
+                    append(activeKey?.name ?: stringResource(R.string.st_no_api_key_saved))
                     if (activeKey != null) {
                         append(" · ")
                         append(stringResource(R.string.st_active))
@@ -1811,7 +1791,7 @@ private fun AgentProviderCard(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text(if (selectedKind == ProviderKind.CLAUDE) stringResource(R.string.st_saved_tokens_count, savedKeys.size) else stringResource(R.string.st_saved_keys_count, savedKeys.size), fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                        Text(stringResource(R.string.st_saved_keys_count, savedKeys.size), fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
                         Text(
                             if (addKeyExpanded) stringResource(R.string.action_cancel) else stringResource(R.string.st_add_key_plus),
                             fontSize = 11.sp,
@@ -1864,7 +1844,7 @@ private fun AgentProviderCard(
                                         onNewKeyName(context.getString(R.string.st_key_default_name, context.getString(selectedKind.titleRes())))
                                     } else onNewKeyName(input)
                                 },
-                                label = { Text(if (selectedKind == ProviderKind.CLAUDE) stringResource(R.string.st_token_name) else stringResource(R.string.provider_key_name)) },
+                                label = { Text(stringResource(R.string.provider_key_name)) },
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(12.dp),
@@ -1872,7 +1852,7 @@ private fun AgentProviderCard(
                             OutlinedTextField(
                                 value = newApiKey,
                                 onValueChange = onNewApiKey,
-                                label = { Text(if (selectedKind == ProviderKind.CLAUDE) stringResource(R.string.provider_claude_token) else stringResource(R.string.provider_api_key)) },
+                                label = { Text(stringResource(R.string.provider_api_key)) },
                                 singleLine = true,
                                 visualTransformation = if (newKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
@@ -1885,7 +1865,7 @@ private fun AgentProviderCard(
                                 enabled = newKeyName.isNotBlank() && newApiKey.isNotBlank(),
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(12.dp),
-                            ) { Text(if (selectedKind == ProviderKind.CLAUDE) stringResource(R.string.st_save_token) else stringResource(R.string.st_save_api_key)) }
+                            ) { Text(stringResource(R.string.st_save_api_key)) }
                         }
                     }
                 }
@@ -1895,7 +1875,7 @@ private fun AgentProviderCard(
             OutlinedButton(
                 onClick = onValidate,
                 enabled = (apiKey.isNotBlank() || selectedKind == ProviderKind.CUSTOM) && !isDiscovering && !isValidating &&
-                    (selectedKind == ProviderKind.CLAUDE || (baseUrl.isNotBlank() && model.isNotBlank())),
+                    baseUrl.isNotBlank() && model.isNotBlank(),
                 modifier = Modifier.fillMaxWidth().height(46.dp),
                 shape = RoundedCornerShape(13.dp),
                 border = BorderStroke(1.dp, PocketOrange.copy(alpha = 0.7f)),
@@ -1904,61 +1884,17 @@ private fun AgentProviderCard(
                     CircularProgressIndicator(Modifier.size(15.dp), strokeWidth = 1.8.dp, color = PocketOrange)
                     Spacer(Modifier.width(8.dp))
                 } else {
-                    Icon(if (selectedKind == ProviderKind.CLAUDE) Icons.Default.Check else Icons.Default.Refresh, null, Modifier.size(16.dp), tint = PocketOrange)
+                    Icon(Icons.Default.Refresh, null, Modifier.size(16.dp), tint = PocketOrange)
                     Spacer(Modifier.width(8.dp))
                 }
                 Text(
                     when {
-                        isValidating && selectedKind == ProviderKind.CLAUDE -> stringResource(R.string.st_saving_token)
                         isValidating -> stringResource(R.string.st_testing_connection)
-                        selectedKind == ProviderKind.CLAUDE -> stringResource(R.string.st_save_subscription_token)
                         else -> stringResource(R.string.agent_test_connection)
                     },
                     color = PocketOrange,
                     fontWeight = FontWeight.SemiBold,
                 )
-            }
-            // Claude subscriptions can't be pinged over HTTP; this runs a one-word Claude Code prompt.
-            if (selectedKind == ProviderKind.CLAUDE && savedKeys.isNotEmpty() && state.provider.kind == ProviderKind.CLAUDE) {
-                Spacer(Modifier.height(10.dp))
-                OutlinedButton(
-                    onClick = onTest,
-                    enabled = state.apiPingStatus != ApiPingStatus.PINGING && !isValidating,
-                    modifier = Modifier.fillMaxWidth().height(46.dp),
-                    shape = RoundedCornerShape(13.dp),
-                    border = BorderStroke(1.dp, PocketOrange.copy(alpha = 0.7f)),
-                ) {
-                    if (state.apiPingStatus == ApiPingStatus.PINGING) {
-                        CircularProgressIndicator(Modifier.size(15.dp), strokeWidth = 1.8.dp, color = PocketOrange)
-                    } else {
-                        Icon(Icons.Default.Refresh, null, Modifier.size(16.dp), tint = PocketOrange)
-                    }
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        stringResource(if (state.apiPingStatus == ApiPingStatus.PINGING) R.string.st_testing_connection else R.string.agent_test_connection),
-                        color = PocketOrange,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                }
-                state.apiPingMessage?.takeIf { state.apiPingStatus != ApiPingStatus.IDLE }?.let { message ->
-                    Spacer(Modifier.height(8.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            if (state.apiPingStatus == ApiPingStatus.FAILED) Icons.Default.Warning else Icons.Default.CheckCircle,
-                            contentDescription = null,
-                            tint = if (state.apiPingStatus == ApiPingStatus.FAILED) MaterialTheme.colorScheme.error else Color(0xFF2E9D72),
-                            modifier = Modifier.size(14.dp),
-                        )
-                        Spacer(Modifier.width(7.dp))
-                        Text(
-                            message,
-                            fontSize = 11.sp,
-                            lineHeight = 15.sp,
-                            color = if (state.apiPingStatus == ApiPingStatus.FAILED) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.weight(1f),
-                        )
-                    }
-                }
             }
         }
     }
@@ -2172,14 +2108,9 @@ private fun defaultModelsForProvider(kind: ProviderKind, context: android.conten
     ProviderKind.NVIDIA_NIM -> listOf(
         DiscoveredModel(ProviderKind.NVIDIA_NIM.defaultModel, "Qwen 2.5 Coder 32B"),
     )
-    ProviderKind.ANTHROPIC -> listOf(
-        DiscoveredModel("claude-3-7-sonnet-20250219", "Claude 3.7 Sonnet (Hybrid)"),
-        DiscoveredModel("claude-3-5-sonnet-20241022", "Claude 3.5 Sonnet v2"),
-        DiscoveredModel("claude-3-5-haiku-20241022", "Claude 3.5 Haiku"),
-    )
     ProviderKind.LLM_ROUTER -> listOf(
+        DiscoveredModel("qwen/qwen3-coder:free", "Qwen3 Coder (free)"),
         DiscoveredModel("deepseek/deepseek-r1", "DeepSeek R1 (via OpenRouter)"),
-        DiscoveredModel("anthropic/claude-3.7-sonnet", "Claude 3.7 Sonnet"),
         DiscoveredModel("openai/gpt-4o", "GPT-4o"),
         DiscoveredModel("meta-llama/llama-3.3-70b-instruct", "Llama 3.3 70B"),
     )

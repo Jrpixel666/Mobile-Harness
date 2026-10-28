@@ -42,23 +42,10 @@ class AgentRegistry(drivers: List<AgentDriver>) {
 
     companion object {
         fun builtIns(
-            claude: RuntimeBridge,
             deepSeek: RuntimeBridge,
             antigravity: RuntimeBridge,
         ) = AgentRegistry(
             listOf(
-                BuiltInAgentDriver(
-                    AgentKind.CLAUDE_CODE,
-                    claude,
-                    setOf(
-                        AgentCapability.API_KEY,
-                        AgentCapability.ACCOUNT_LOGIN,
-                        AgentCapability.PROVIDER_PICKER,
-                        AgentCapability.MODEL_PICKER,
-                        AgentCapability.RESUME,
-                        AgentCapability.INTERACTIVE_APPROVALS,
-                    ),
-                ),
                 BuiltInAgentDriver(
                     AgentKind.DEEPSEEK_HARNESS,
                     deepSeek,

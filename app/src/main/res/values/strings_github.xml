@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- GitHub panel for a project: repository, commits, Actions builds and APK releases. -->
+    <string name="gh_panel_title">GitHub</string>
+    <string name="gh_open_panel">GitHub: commit, builds and installs</string>
+    <string name="gh_sign_in_first">Sign in with GitHub first.</string>
+    <string name="gh_wait_for_agent">Wait for the agent to finish first.</string>
+    <string name="gh_signin_desc">Sign in with GitHub\'s official CLI to put this project on GitHub, build APKs there and install them.</string>
+    <string name="gh_refresh">Refresh</string>
+    <string name="gh_loading">Checking the repository…</string>
+
+    <string name="gh_no_repo_title">Put this project on GitHub</string>
+    <string name="gh_no_repo_desc">Creates a repository under your account and pushes the project to it.</string>
+    <string name="gh_repo_name">Repository name</string>
+    <string name="gh_private">Private repository</string>
+    <string name="gh_add_workflow">Build an APK on GitHub after every push</string>
+    <string name="gh_create_repo">Create repository and push</string>
+    <string name="gh_invalid_repo_name">Use letters, numbers, dots, dashes or underscores for the repository name.</string>
+    <string name="gh_create_failed">Could not create the repository</string>
+    <string name="gh_repo_created">Created %1$s and pushed the project.</string>
+
+    <string name="gh_branch">Branch %1$s</string>
+    <string name="gh_changes">%1$d changed files · %2$d commits not pushed</string>
+    <string name="gh_commit_message">Commit message</string>
+    <string name="gh_default_commit_message">Update from Mobile Harness</string>
+    <string name="gh_commit_push">Commit and push</string>
+    <string name="gh_push_failed">Push failed</string>
+    <string name="gh_pushed">Pushed to GitHub.</string>
+    <string name="gh_view_on_github">Open on GitHub</string>
+
+    <string name="gh_builds">Builds</string>
+    <string name="gh_no_workflow">This repository has no APK build yet.</string>
+    <string name="gh_add_workflow_button">Add APK build and push</string>
+    <string name="gh_workflow_commit_message">Add APK build workflow</string>
+    <string name="gh_workflow_added">Added the APK build. GitHub is building now.</string>
+    <string name="gh_start_build">Start a build</string>
+    <string name="gh_build_started">Build started.</string>
+    <string name="gh_build_start_failed">Could not start a build</string>
+    <string name="gh_no_builds">No builds yet. They start on every push.</string>
+    <string name="gh_build_number">Build %1$d</string>
+    <string name="gh_status_queued">Waiting</string>
+    <string name="gh_status_running">Building…</string>
+    <string name="gh_status_success">Built</string>
+    <string name="gh_status_failed">Failed</string>
+    <string name="gh_status_cancelled">Cancelled</string>
+    <string name="gh_fix_with_agent">Fix with AI</string>
+    <string name="gh_fix_sent">Sent the build error to the agent.</string>
+    <string name="gh_fix_prompt">GitHub build #%1$d of this project failed. The end of its log:\n\n%2$s\n\nFind the root cause and fix it.</string>
+
+    <string name="gh_releases">APKs from GitHub</string>
+    <string name="gh_install_build">Install build %1$d (%2$s)</string>
+    <string name="gh_download_failed">Download failed</string>
+    <string name="gh_install_started">Installing build %1$d. Confirm in the window Android shows.</string>
+</resources>

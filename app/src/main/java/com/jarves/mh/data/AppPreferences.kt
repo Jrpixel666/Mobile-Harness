@@ -38,9 +38,9 @@ class AppPreferences(private val context: Context) {
         get() = preferences.getBoolean("initial_language_selected", onboardingComplete || runtimeSetupComplete)
         set(value) { preferences.edit().putBoolean("initial_language_selected", value).apply() }
 
-    /** Coding agent engine the user picked during setup. Absent = pre-agent-choice install → Claude. */
+    /** Coding agent engine the user picked during setup. Unknown or removed agents fall back in [AgentKind.fromStored]. */
     var agentKind: String
-        get() = preferences.getString("agent_kind", AgentKind.CLAUDE_CODE.stableId) ?: AgentKind.CLAUDE_CODE.stableId
+        get() = preferences.getString("agent_kind", AgentKind.ANTIGRAVITY.stableId) ?: AgentKind.ANTIGRAVITY.stableId
         set(value) { preferences.edit().putString("agent_kind", value).apply() }
 
     /** Agent chosen for the initial runtime installation; used as the leading UI tab. */
@@ -173,26 +173,14 @@ class AppPreferences(private val context: Context) {
         val storedKind = runCatching {
             ProviderKind.valueOf(preferences.getString("${sourcePrefix}kind", null).orEmpty())
         }.getOrNull()
-        val storedBaseUrl = storedKind?.let {
-            preferences.getString("${sourcePrefix}base_url", it.defaultBaseUrl) ?: it.defaultBaseUrl
-        }.orEmpty()
-        val storedModel = storedKind?.let {
-            preferences.getString("${sourcePrefix}model", it.defaultModel) ?: it.defaultModel
-        }.orEmpty()
-        // Older builds copied the global Claude/Anthropic default into a new
-        // DeepSeek Harness profile. Treat that untouched, keyless placeholder
-        // as unconfigured so DeepSeek opens on its own official provider.
-        val legacyClaudeDefaultInDeepSeek = agent == AgentKind.DEEPSEEK_HARNESS &&
-            storedKind == ProviderKind.ANTHROPIC &&
-            !vault.contains(ProviderKind.ANTHROPIC.name) &&
-            storedBaseUrl == ProviderKind.ANTHROPIC.defaultBaseUrl &&
-            storedModel == ProviderKind.ANTHROPIC.defaultModel
+        // Saved Claude and Anthropic profiles no longer parse (storedKind is null), so
+        // they fall back to OpenRouter, or DeepSeek's own provider for DeepSeek Harness.
         val kind = when {
-            agent == null -> storedKind ?: ProviderKind.ANTHROPIC
-            agent == AgentKind.DEEPSEEK_HARNESS && (!hasAgentProfile || legacyClaudeDefaultInDeepSeek) -> ProviderKind.DEEPSEEK
+            agent == null -> storedKind ?: ProviderKind.LLM_ROUTER
+            agent == AgentKind.DEEPSEEK_HARNESS && !hasAgentProfile -> ProviderKind.DEEPSEEK
             storedKind != null && storedKind in providersForAgent(agent) -> storedKind
             agent == AgentKind.DEEPSEEK_HARNESS -> ProviderKind.DEEPSEEK
-            else -> ProviderKind.ANTHROPIC
+            else -> ProviderKind.LLM_ROUTER
         }
         val useStoredValues = storedKind == kind
         val savedModel = if (useStoredValues) {

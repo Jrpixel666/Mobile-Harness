@@ -107,6 +107,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -460,6 +461,18 @@ fun PocketDevApp(viewModel: MainViewModel = viewModel()) {
             onCancelAndroidBuild = viewModel::cancelAndroidBuild,
             onCleanAndroid = viewModel::cleanAndroidProject,
             onInstallAndroidTools = { viewModel.installDevStack(DevStack.ANDROID) },
+            githubActions = GitHubProjectActions(
+                refresh = viewModel::refreshGitHubProject,
+                signIn = viewModel::startGitHubLogin,
+                newCode = viewModel::generateNewGitHubCode,
+                createRepository = viewModel::createGitHubRepository,
+                commitAndPush = viewModel::commitAndPushProject,
+                addWorkflow = viewModel::addBuildWorkflowToProject,
+                startBuild = viewModel::startGitHubBuild,
+                fixBuild = viewModel::fixGitHubBuildWithAgent,
+                install = viewModel::installGitHubRelease,
+                dismissMessage = viewModel::dismissGitHubProjectMessage,
+            ),
         )
         else -> RootScreenHost(state, viewModel, projectsListState)
     }
@@ -1129,7 +1142,7 @@ private fun getDevStackVisuals(stack: DevStack): DevStackVisuals = when (stack) 
 @Composable
 private fun RuntimeSetupPromptScreen(
     selectedStacks: Set<DevStack>,
-    selectedAgent: AgentKind = AgentKind.CLAUDE_CODE,
+    selectedAgent: AgentKind = AgentKind.ANTIGRAVITY,
     themeMode: AppThemeMode = AppThemeMode.DARK,
     currentLanguageCode: String = "system",
     onSetLanguage: (String) -> Unit = {},
@@ -1517,7 +1530,6 @@ private fun RuntimeSetupPromptScreen(
 }
 
 private const val CORE_RUNTIME_DOWNLOAD_MB = 69
-private const val CLAUDE_RUNTIME_DOWNLOAD_MB = 72
 private const val DSH_RUNTIME_DOWNLOAD_MB = 27
 private const val AGY_RUNTIME_DOWNLOAD_MB = 40
 private const val PYTHON_RUNTIME_DOWNLOAD_MB = 55
@@ -1560,7 +1572,6 @@ private fun toolchainDownloadSummary(selected: Set<DevStack>, agent: AgentKind):
     if (BuildConfig.OFFLINE_RUNTIME_BUNDLES) return stringResource(R.string.ws_bundles_included_offline)
     val total = CORE_RUNTIME_DOWNLOAD_MB +
         when (agent) {
-            AgentKind.CLAUDE_CODE -> CLAUDE_RUNTIME_DOWNLOAD_MB
             AgentKind.DEEPSEEK_HARNESS -> DSH_RUNTIME_DOWNLOAD_MB
             AgentKind.ANTIGRAVITY -> AGY_RUNTIME_DOWNLOAD_MB
         } +
@@ -1649,12 +1660,10 @@ private fun AgentChoiceRow(
     onClick: () -> Unit,
 ) {
     val accent = when (agent) {
-        AgentKind.CLAUDE_CODE -> Color(0xFFD97757)
         AgentKind.DEEPSEEK_HARNESS -> Color(0xFF4D6BFE)
         AgentKind.ANTIGRAVITY -> Color(0xFF4285F4)
     }
     val mark = when (agent) {
-        AgentKind.CLAUDE_CODE -> "CC"
         AgentKind.DEEPSEEK_HARNESS -> "DS"
         AgentKind.ANTIGRAVITY -> "AG"
     }
@@ -2678,7 +2687,7 @@ private fun QuickTerminalSheet(
 private fun ProviderSetupScreen(
     initial: ProviderProfile,
     onboarding: Boolean,
-    agentKind: AgentKind = AgentKind.CLAUDE_CODE,
+    agentKind: AgentKind = AgentKind.ANTIGRAVITY,
     initialStep: Int = if (onboarding) 0 else 1,
     onBack: (() -> Unit)? = null,
     currentLanguageCode: String = "system",
@@ -3003,8 +3012,6 @@ private fun ProviderChoiceStep(
 
 @StringRes
 private fun providerTitleResource(provider: ProviderKind): Int = when (provider) {
-    ProviderKind.CLAUDE -> R.string.provider_title_claude
-    ProviderKind.ANTHROPIC -> R.string.provider_title_anthropic
     ProviderKind.LLM_ROUTER -> R.string.provider_title_openrouter
     ProviderKind.DEEPSEEK -> R.string.provider_title_deepseek
     ProviderKind.KIMI -> R.string.provider_title_kimi
@@ -3015,8 +3022,6 @@ private fun providerTitleResource(provider: ProviderKind): Int = when (provider)
 
 @StringRes
 private fun providerSubtitleResource(provider: ProviderKind): Int = when (provider) {
-    ProviderKind.CLAUDE -> R.string.provider_subtitle_claude
-    ProviderKind.ANTHROPIC -> R.string.provider_subtitle_anthropic
     ProviderKind.LLM_ROUTER -> R.string.provider_subtitle_openrouter
     ProviderKind.DEEPSEEK -> R.string.provider_subtitle_deepseek
     ProviderKind.KIMI, ProviderKind.CUSTOM -> R.string.provider_subtitle_anthropic_compatible
@@ -3031,8 +3036,6 @@ private fun ProviderChoiceRow(
     onClick: () -> Unit,
 ) {
     val accent = when (provider) {
-        ProviderKind.CLAUDE -> Color(0xFFD97757)
-        ProviderKind.ANTHROPIC -> Color(0xFFE7A26D)
         ProviderKind.LLM_ROUTER -> Color(0xFF5B8DEF)
         ProviderKind.DEEPSEEK -> Color(0xFF4D6BFE)
         ProviderKind.KIMI -> Color(0xFF8B7CF6)
@@ -3041,8 +3044,6 @@ private fun ProviderChoiceRow(
         ProviderKind.CUSTOM -> PocketOrange
     }
     val mark = when (provider) {
-        ProviderKind.CLAUDE -> "C"
-        ProviderKind.ANTHROPIC -> "A"
         ProviderKind.LLM_ROUTER -> "OR"
         ProviderKind.DEEPSEEK -> "DS"
         ProviderKind.KIMI -> "K"
@@ -3122,7 +3123,7 @@ private fun ProviderChoiceRow(
 @Composable
 private fun ProviderCredentialsStep(
     provider: ProviderKind,
-    agentKind: AgentKind = AgentKind.CLAUDE_CODE,
+    agentKind: AgentKind = AgentKind.ANTIGRAVITY,
     baseUrl: String,
     model: String,
     dshApi: String = "anthropic-messages",
@@ -3155,17 +3156,6 @@ private fun ProviderCredentialsStep(
         if (query.isEmpty()) models else models.filter {
             it.id.contains(query, ignoreCase = true) || it.displayName.contains(query, ignoreCase = true)
         }
-    }
-
-    if (provider == ProviderKind.CLAUDE) {
-        ClaudeSubscriptionCredentialsStep(
-            token = apiKey,
-            hasStoredToken = hasStoredSecret,
-            onToken = onApiKey,
-            onSave = onSave,
-            onChangeAgent = onChangeAgent,
-        )
-        return
     }
 
     fun discoverModels(openWhenReady: Boolean = true) {
@@ -3425,95 +3415,6 @@ private fun ProviderCredentialsStep(
                 onClick = onChangeAgent,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text(stringResource(R.string.provider_use_another_agent), fontSize = 12.sp)
-            }
-        }
-    }
-}
-
-@Composable
-private fun ClaudeSubscriptionCredentialsStep(
-    token: String,
-    hasStoredToken: Boolean,
-    onToken: (String) -> Unit,
-    onSave: () -> Unit,
-    onChangeAgent: () -> Unit,
-) {
-    var tokenVisible by rememberSaveable { mutableStateOf(false) }
-    val hasToken = token.isNotBlank() || hasStoredToken
-
-    LazyColumn(
-        modifier = Modifier.fillMaxSize().imePadding(),
-        contentPadding = PaddingValues(bottom = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        item {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(stringResource(R.string.provider_step_of, 3, 3), color = PocketOrange, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
-                Spacer(Modifier.weight(1f))
-                Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = CircleShape) {
-                    Row(Modifier.padding(horizontal = 12.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Key, null, Modifier.size(15.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Spacer(Modifier.width(6.dp))
-                        Text(stringResource(R.string.provider_encrypted_locally), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-            }
-            Spacer(Modifier.height(16.dp))
-            Text(stringResource(R.string.provider_title_claude), style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(6.dp))
-            Text(
-                stringResource(R.string.provider_claude_connect_desc),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        item {
-            Surface(
-                color = MaterialTheme.colorScheme.surface,
-                shape = RoundedCornerShape(20.dp),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-            ) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(stringResource(R.string.provider_claude_step_one), fontSize = 13.sp)
-                    Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(10.dp)) {
-                        Text(
-                            "claude setup-token",
-                            modifier = Modifier.fillMaxWidth().padding(12.dp),
-                            fontFamily = FontFamily.Monospace,
-                            color = PocketOrange,
-                        )
-                    }
-                    Text(stringResource(R.string.provider_claude_step_two), fontSize = 13.sp)
-                    OutlinedTextField(
-                        value = token,
-                        onValueChange = onToken,
-                        label = { Text(stringResource(R.string.provider_claude_token)) },
-                        placeholder = { Text(stringResource(if (hasStoredToken) R.string.provider_saved_key_placeholder else R.string.provider_paste_token)) },
-                        supportingText = if (hasStoredToken && token.isBlank()) ({ Text(stringResource(R.string.provider_saved_token_ready)) }) else null,
-                        singleLine = true,
-                        visualTransformation = if (tokenVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                        trailingIcon = {
-                            IconButton(onClick = { tokenVisible = !tokenVisible }) {
-                                Icon(if (tokenVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility, stringResource(R.string.provider_toggle_token_visibility))
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-            }
-        }
-        item {
-            Button(
-                onClick = onSave,
-                enabled = hasToken,
-                modifier = Modifier.fillMaxWidth().height(54.dp),
-            ) {
-                Text(stringResource(R.string.provider_save_continue))
-            }
-        }
-        item {
-            TextButton(onClick = onChangeAgent, modifier = Modifier.fillMaxWidth()) {
                 Text(stringResource(R.string.provider_use_another_agent), fontSize = 12.sp)
             }
         }
@@ -4395,6 +4296,7 @@ private fun WorkspaceScreen(
     onCancelAndroidBuild: () -> Unit,
     onCleanAndroid: () -> Unit,
     onInstallAndroidTools: () -> Unit,
+    githubActions: GitHubProjectActions,
 ) {
     BackHandler(onBack = onBack)
     val context = LocalContext.current
@@ -4495,6 +4397,7 @@ private fun WorkspaceScreen(
     var selectedTab by rememberSaveable { mutableStateOf(WorkspaceTab.CHAT) }
     var showChats by rememberSaveable { mutableStateOf(false) }
     var showAndroidBuild by rememberSaveable { mutableStateOf(false) }
+    var showGitHub by rememberSaveable { mutableStateOf(false) }
     val activeChat = state.projectChats.firstOrNull { it.id == state.activeChatId }
     val requestAndroidAction: (AndroidAction) -> Unit = { action ->
         val mayInstall = action in setOf(AndroidAction.INSTALL, AndroidAction.RUN, AndroidAction.BUILD_AND_RUN)
@@ -4511,6 +4414,36 @@ private fun WorkspaceScreen(
             exportSelectionMode = false
             exportSelection = ExportSelection()
         }
+    }
+
+    if (showGitHub) {
+        GitHubProjectSheet(
+            state = state,
+            isAndroidProject = isAndroidProject,
+            actions = GitHubProjectActions(
+                refresh = githubActions.refresh,
+                signIn = githubActions.signIn,
+                newCode = githubActions.newCode,
+                createRepository = githubActions.createRepository,
+                commitAndPush = githubActions.commitAndPush,
+                addWorkflow = githubActions.addWorkflow,
+                startBuild = githubActions.startBuild,
+                fixBuild = { run -> githubActions.fixBuild(run); showGitHub = false; selectedTab = WorkspaceTab.CHAT },
+                install = { release ->
+                    // Android must allow installs from Mobile Harness before a download is useful.
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !context.packageManager.canRequestPackageInstalls()) {
+                        context.startActivity(
+                            Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${context.packageName}"))
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                        )
+                    } else {
+                        githubActions.install(release)
+                    }
+                },
+                dismissMessage = githubActions.dismissMessage,
+            ),
+            onDismiss = { showGitHub = false },
+        )
     }
 
     if (showAndroidBuild) {
@@ -4636,6 +4569,7 @@ private fun WorkspaceScreen(
                             else Icon(Icons.Default.PlayArrow, stringResource(R.string.ws_build_run_android))
                         }
                     }
+                    IconButton(onClick = { showGitHub = true }) { Icon(Icons.Default.CloudUpload, stringResource(R.string.gh_open_panel)) }
                     IconButton(onClick = { showChats = true }) { Icon(Icons.Default.History, stringResource(R.string.ws_project_chats)) }
                     if (state.isRunning) CircularProgressIndicator(Modifier.padding(12.dp).size(20.dp), strokeWidth = 2.dp)
                 },

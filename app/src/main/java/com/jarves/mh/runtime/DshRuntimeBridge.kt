@@ -76,15 +76,6 @@ class DshRuntimeBridge(
             eventBus.emit(RuntimeEvent.SessionFailed(sessionId, "No API key is saved for ${provider.kind.title}."))
             return@withContext sessionId
         }
-        if (provider.kind == ProviderKind.CLAUDE) {
-            eventBus.emit(
-                RuntimeEvent.SessionFailed(
-                    sessionId,
-                    "Claude subscription login is not supported by DeepSeek Harness. Pick a key-based provider in Settings.",
-                ),
-            )
-            return@withContext sessionId
-        }
 
         var openRouterGateway: OpenRouterRoutingGateway? = null
         runCatching {
@@ -734,12 +725,6 @@ internal object DshRouteMapper {
                 keyEnv = "DEEPSEEK_API_KEY",
                 defaultModel = model,
             )
-            ProviderKind.ANTHROPIC -> DshRoute(
-                name = "mh-anthropic",
-                keyEnv = DshRuntimeBridge.FALLBACK_KEY_ENV,
-                defaultModel = model,
-                custom = DshCustomRoute("anthropic-messages", profile.resolvedBaseUrl),
-            )
             ProviderKind.LLM_ROUTER -> DshRoute(
                 name = "mh-openrouter",
                 keyEnv = DshRuntimeBridge.FALLBACK_KEY_ENV,
@@ -770,7 +755,6 @@ internal object DshRouteMapper {
                 defaultModel = model,
                 custom = DshCustomRoute(profile.dshApi.ifBlank { "anthropic-messages" }, profile.resolvedBaseUrl),
             )
-            ProviderKind.CLAUDE -> throw IllegalArgumentException("Claude subscription login is not supported by DeepSeek Harness")
         }
     }
 }

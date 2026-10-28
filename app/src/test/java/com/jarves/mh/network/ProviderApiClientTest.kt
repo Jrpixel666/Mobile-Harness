@@ -48,7 +48,7 @@ class ProviderApiClientTest {
     fun chatAndAnthropicCompatibleProbesUseProviderSafeTokenLimit() {
         val client = ProviderApiClient()
         val chat = JSONObject(client.validationBody("chat-model", ProviderProtocol.OPENAI_CHAT))
-        val anthropic = JSONObject(client.validationBody("claude-model", ProviderProtocol.ANTHROPIC))
+        val anthropic = JSONObject(client.validationBody("gateway-model", ProviderProtocol.ANTHROPIC_GATEWAY))
 
         assertEquals(8, chat.getInt("max_tokens"))
         assertEquals(8, anthropic.getInt("max_tokens"))

@@ -49,8 +49,11 @@ import com.jarves.mh.model.providerProtocolForAgent
 import com.jarves.mh.network.ConnectionValidation
 import com.jarves.mh.network.ModelDiscoveryResult
 import com.jarves.mh.network.ProviderApiClient
+import com.jarves.mh.network.GitHubApkRelease
+import com.jarves.mh.network.GitHubProjectInfo
+import com.jarves.mh.network.GitHubProjects
 import com.jarves.mh.network.GitHubRepository
-import com.jarves.mh.runtime.ClaudeRuntimeBridge
+import com.jarves.mh.network.GitHubRun
 import com.jarves.mh.runtime.DshRuntimeBridge
 import com.jarves.mh.runtime.AgentRegistry
 import com.jarves.mh.runtime.AgentUpdateInfo
@@ -224,6 +227,33 @@ data class TerminalOutputLine(
 
 private val ANSI_TERMINAL_SEQUENCE = Regex("\\u001B(?:\\][^\\u0007]*(?:\\u0007|\\u001B\\\\)|\\[[0-?]*[ -/]*[@-~]|[()][A-Z0-9])")
 
+private val GIT_STATUS_SCRIPT = """
+    if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then echo NOREPO=1; exit 0; fi
+    echo "REMOTE=${'$'}(git remote get-url origin 2>/dev/null)"
+    echo "BRANCH=${'$'}(git rev-parse --abbrev-ref HEAD 2>/dev/null)"
+    echo "CHANGED=${'$'}(git status --porcelain 2>/dev/null | wc -l)"
+    echo "AHEAD=${'$'}(git rev-list --count @{u}..HEAD 2>/dev/null || echo 0)"
+""".trimIndent()
+
+/** Lets git push through the GitHub CLI's sign-in and gives commits the account's name. */
+private val GIT_IDENTITY_SCRIPT = """
+    set -e
+    "${'$'}GH" auth setup-git >/dev/null
+    if [ -z "${'$'}(git config --global user.email)" ]; then
+      login=${'$'}("${'$'}GH" api user --jq .login)
+      id=${'$'}("${'$'}GH" api user --jq .id)
+      git config --global user.name "${'$'}login"
+      git config --global user.email "${'$'}id+${'$'}login@users.noreply.github.com"
+    fi
+""".trimIndent() + "\n"
+
+private val GIT_PUSH_SCRIPT = """
+    git add -A
+    if [ -f ${GitHubProjects.KEYSTORE_PATH} ]; then git add -f ${GitHubProjects.KEYSTORE_PATH}; fi
+    if ! git diff --cached --quiet; then git commit -q -m "${'$'}MH_MESSAGE"; fi
+    git push -u origin HEAD
+""".trimIndent()
+
 internal fun sanitizeTerminalOutput(text: String): String = text
     .replace(ANSI_TERMINAL_SEQUENCE, "")
     .filter { it == '\n' || it == '\r' || it == '\t' || it.code >= 0x20 }
@@ -288,7 +318,7 @@ data class AppUiState(
     val onboardingComplete: Boolean = false,
     val backgroundSetupComplete: Boolean = false,
     val initialLanguageSelected: Boolean = false,
-    val provider: ProviderProfile = ProviderProfile(ProviderKind.ANTHROPIC),
+    val provider: ProviderProfile = ProviderProfile(ProviderKind.LLM_ROUTER),
     val activeApiKeyName: String? = null,
     val themeMode: com.jarves.mh.ui.theme.AppThemeMode = com.jarves.mh.ui.theme.AppThemeMode.DARK,
     val languageCode: String = "system",
@@ -306,6 +336,13 @@ data class AppUiState(
     val githubMessage: String? = null,
     val githubRepositories: List<GitHubRepository> = emptyList(),
     val githubRepositoriesLoading: Boolean = false,
+    /** GitHub panel for the open project: repository, builds and APK releases. */
+    val githubProject: GitHubProjectInfo = GitHubProjectInfo(),
+    val githubProjectLoading: Boolean = false,
+    /** The GitHub action in progress (commit, create, install…), or null. */
+    val githubProjectBusy: String? = null,
+    val githubProjectMessage: String? = null,
+    val githubProjectError: Boolean = false,
     val activeProject: Project? = null,
     val workspaceVisible: Boolean = false,
     val readOnlyProject: Project? = null,
@@ -357,8 +394,8 @@ data class AppUiState(
     val devStackProgress: Float = 0f,
     val devStackBytes: Pair<Long, Long>? = null,
     val devStackBytesPerSecond: Long? = null,
-    val agentKind: AgentKind = AgentKind.CLAUDE_CODE,
-    val primaryAgentKind: AgentKind = AgentKind.CLAUDE_CODE,
+    val agentKind: AgentKind = AgentKind.ANTIGRAVITY,
+    val primaryAgentKind: AgentKind = AgentKind.ANTIGRAVITY,
     val installedAgentVersions: Map<AgentKind, String> = emptyMap(),
     val agentInstalling: AgentKind? = null,
     val agentMessage: String? = null,
@@ -413,7 +450,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val vault = ApiKeyVault(application)
     private val preferences = AppPreferences(application)
-    private val claudeRuntime = ClaudeRuntimeBridge(application) { profile -> vault.get(profile.kind.name) }
     private val dshRuntime = DshRuntimeBridge(application) { profile -> vault.get(profile.kind.name) }
     private val installer = RuntimeInstaller(application)
     private val antigravityRuntime = AntigravityRuntimeBridge(
@@ -427,7 +463,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _state.value.activeChatId?.let { preferences.saveAgentConversation(AgentKind.ANTIGRAVITY, projectId, it, id) }
         },
     )
-    private val agentRegistry = AgentRegistry.builtIns(claudeRuntime, dshRuntime, antigravityRuntime)
+    private val agentRegistry = AgentRegistry.builtIns(dshRuntime, antigravityRuntime)
     private fun activeRuntime(): com.jarves.mh.runtime.RuntimeBridge = agentRegistry.require(_state.value.agentKind).runtime
     private val providerApi = ProviderApiClient(application)
     private fun appUpdater(): AppUpdater = AppUpdater(
@@ -885,7 +921,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch(Dispatchers.IO) {
             val current = _state.value
             if (!current.isRunning) {
-                runCatching { claudeRuntime.stopActiveSession() }
                 runCatching { dshRuntime.stopActiveSession() }
                 runCatching { antigravityRuntime.stopActiveSession() }
             }
@@ -2042,14 +2077,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     /** Keeps both agent bridges mapped to the same workspace root; the active one is used. */
     private fun configureBridgeRoots(projectId: String, rootPath: String) {
-        claudeRuntime.configureProjectRoot(projectId, rootPath)
         dshRuntime.configureProjectRoot(projectId, rootPath)
         antigravityRuntime.configureProjectRoot(projectId, rootPath)
     }
 
     init {
         viewModelScope.launch { RuntimeSetupController.snapshot.collect(::onSetupSnapshot) }
-        viewModelScope.launch { claudeRuntime.events.collect(::onRuntimeEvent) }
         viewModelScope.launch { bootstrap() }
     }
 
@@ -2839,13 +2872,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         )
     }
 
-    /**
-     * Background check at startup/after setup. Skips Claude subscriptions: their test boots Claude
-     * Code (about a minute of heavy work on older phones), so it only runs when the user taps Test.
-     */
+    /** Background check at startup/after setup. */
     private fun autoPingApi() {
-        val profile = _state.value.provider
-        if (_state.value.agentKind == AgentKind.CLAUDE_CODE && profile.kind == ProviderKind.CLAUDE) return
         pingApi()
     }
 
@@ -2855,10 +2883,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         val profile = _state.value.provider
-        if (_state.value.agentKind == AgentKind.CLAUDE_CODE && profile.kind == ProviderKind.CLAUDE) {
-            testClaudeSubscription(profile)
-            return
-        }
         if (profile.baseUrl.isBlank() || profile.model.isBlank()) return
         if (_state.value.apiPingStatus == ApiPingStatus.PINGING) return
         _state.update { it.copy(apiPingStatus = ApiPingStatus.PINGING, apiPingMessage = str(R.string.vm_ping_sending)) }
@@ -2881,27 +2905,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     it.copy(apiPingStatus = ApiPingStatus.FAILED, apiPingMessage = result.message)
                 }
             }
-        }
-    }
-
-    /** Claude subscriptions have no HTTP endpoint to ping, so ask Claude Code itself for a one-word reply. */
-    private fun testClaudeSubscription(profile: ProviderProfile) {
-        if (_state.value.apiPingStatus == ApiPingStatus.PINGING) return
-        _state.update { it.copy(apiPingStatus = ApiPingStatus.PINGING, apiPingMessage = str(R.string.vm_claude_hello)) }
-        viewModelScope.launch {
-            runCatching { claudeRuntime.hello(profile) }
-                .onSuccess {
-                    _state.update { it.copy(apiPingStatus = ApiPingStatus.OK, apiPingMessage = str(R.string.vm_claude_working)) }
-                }
-                .onFailure { error ->
-                    _state.update {
-                        it.copy(
-                            apiPingStatus = ApiPingStatus.FAILED,
-                            apiPingMessage = error.message?.replace(Regex("\\s+"), " ")?.trim()?.take(240)
-                                ?: str(R.string.vm_unknown_error),
-                        )
-                    }
-                }
         }
     }
 
@@ -2990,6 +2993,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _state.update {
             it.copy(
                 activeProject = project,
+                githubProject = GitHubProjectInfo(),
+                githubProjectMessage = null,
+                githubProjectError = false,
                 workspaceVisible = true,
                 readOnlyProject = null,
                 readOnlyProjectChats = emptyList(),
@@ -3159,6 +3165,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             it.copy(
                 projects = listOf(project) + it.projects,
                 activeProject = project,
+                githubProject = GitHubProjectInfo(),
+                githubProjectMessage = null,
+                githubProjectError = false,
                 workspaceVisible = true,
                 messages = listOf(ChatMessage(fromUser = false, text = "Hi! Tell me what you want to build or change.")),
                 liveProcess = emptyList(),
@@ -3754,6 +3763,216 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         return repositories.values.toList()
+    }
+
+    /** Runs a shell script in the open project's folder with the signed-in GitHub CLI available. */
+    private fun runProjectGitScript(project: Project, script: String, extraEnvironment: Map<String, String> = emptyMap()): Pair<Int, String> {
+        val runtime = installer.installedRuntime()
+        val outputFile = File(getApplication<Application>().cacheDir, "github-project-${System.nanoTime()}.log")
+        return try {
+            val process = installer.process(
+                runtime.proot,
+                runtime.rootfs,
+                projectWorkspaceRoot(project),
+                githubCliEnvironment() + mapOf("GIT_TERMINAL_PROMPT" to "0", "GH" to RuntimeInstaller.GITHUB_CLI_GUEST_PATH) + extraEnvironment,
+                listOf("/usr/bin/bash", "-lc", script),
+                projectGuestRoot(project),
+                outputFile = outputFile,
+            )
+            val exit = process.waitFor()
+            exit to sanitizeTerminalOutput(outputFile.readTailText(MAX_PROCESS_OUTPUT_BYTES)).trim()
+        } finally {
+            outputFile.delete()
+        }
+    }
+
+    private fun lastLine(output: String, fallback: String): String =
+        output.lineSequence().lastOrNull { it.isNotBlank() }?.trim()?.take(300) ?: fallback
+
+    /** Reloads repository state, builds and releases for the GitHub panel. */
+    fun refreshGitHubProject() {
+        val project = _state.value.activeProject ?: return
+        if (_state.value.githubProjectLoading) return
+        _state.update { it.copy(githubProjectLoading = true) }
+        viewModelScope.launch(Dispatchers.IO) {
+            val result = runCatching {
+                val (_, output) = runProjectGitScript(project, GIT_STATUS_SCRIPT)
+                val values = output.lineSequence().mapNotNull { line ->
+                    line.substringBefore('=', "").takeIf(String::isNotBlank)?.let { it to line.substringAfter('=') }
+                }.toMap()
+                val repo = values["REMOTE"]?.let(GitHubProjects::repoFromRemote)
+                var info = GitHubProjectInfo(
+                    repoFullName = repo,
+                    branch = values["BRANCH"].orEmpty().takeIf { it != "HEAD" }.orEmpty(),
+                    changedFiles = values["CHANGED"]?.trim()?.toIntOrNull() ?: 0,
+                    unpushedCommits = values["AHEAD"]?.trim()?.toIntOrNull() ?: 0,
+                    hasBuildWorkflow = File(projectWorkspaceRoot(project), GitHubProjects.WORKFLOW_PATH).isFile,
+                )
+                if (repo != null && _state.value.githubAuthStatus == GitHubAuthStatus.CONNECTED) {
+                    val (runsExit, runsJson) = runGitHubCli(listOf("api", "repos/$repo/actions/runs?per_page=8"))
+                    if (runsExit == 0) info = info.copy(runs = runCatching { GitHubProjects.runs(runsJson) }.getOrDefault(emptyList()))
+                    val (releasesExit, releasesJson) = runGitHubCli(listOf("api", "repos/$repo/releases?per_page=10"))
+                    if (releasesExit == 0) info = info.copy(releases = runCatching { GitHubProjects.apkReleases(releasesJson) }.getOrDefault(emptyList()))
+                }
+                info
+            }
+            _state.update { current ->
+                if (current.activeProject?.id != project.id) return@update current.copy(githubProjectLoading = false)
+                result.fold(
+                    onSuccess = { current.copy(githubProject = it, githubProjectLoading = false) },
+                    onFailure = { error ->
+                        current.copy(
+                            githubProjectLoading = false,
+                            githubProjectMessage = error.message ?: str(R.string.vm_unknown_error),
+                            githubProjectError = true,
+                        )
+                    },
+                )
+            }
+        }
+    }
+
+    private fun githubProjectAction(busy: String, action: suspend (Project) -> String) {
+        val project = _state.value.activeProject ?: return
+        if (_state.value.githubProjectBusy != null) return
+        if (_state.value.githubAuthStatus != GitHubAuthStatus.CONNECTED) {
+            _state.update { it.copy(githubProjectMessage = str(R.string.gh_sign_in_first), githubProjectError = true) }
+            return
+        }
+        if (_state.value.isRunning) {
+            _state.update { it.copy(githubProjectMessage = str(R.string.gh_wait_for_agent), githubProjectError = true) }
+            return
+        }
+        _state.update { it.copy(githubProjectBusy = busy, githubProjectMessage = null, githubProjectError = false) }
+        viewModelScope.launch(Dispatchers.IO) {
+            val result = runCatching { action(project) }
+            _state.update {
+                it.copy(
+                    githubProjectBusy = null,
+                    githubProjectMessage = result.getOrElse { error -> error.message ?: str(R.string.vm_unknown_error) },
+                    githubProjectError = result.isFailure,
+                )
+            }
+            refreshGitHubProject()
+        }
+    }
+
+    /**
+     * Writes the APK build workflow and the debug key it signs with. The key is the one
+     * this phone's Android builds use, so APKs from GitHub install over local builds.
+     */
+    private fun writeBuildWorkflow(project: Project) {
+        val root = projectWorkspaceRoot(project)
+        File(root, GitHubProjects.WORKFLOW_PATH).apply { parentFile?.mkdirs() }.writeText(GitHubProjects.ANDROID_BUILD_WORKFLOW)
+        val target = File(root, GitHubProjects.KEYSTORE_PATH).apply { parentFile?.mkdirs() }
+        if (target.isFile) return
+        val deviceKey = File(installer.installedRuntime().rootfs, "root/.android/debug.keystore")
+        if (!deviceKey.isFile) {
+            deviceKey.parentFile?.mkdirs()
+            getApplication<Application>().assets.open("github/debug.keystore").use { input ->
+                deviceKey.outputStream().use(input::copyTo)
+            }
+        }
+        deviceKey.copyTo(target, overwrite = true)
+    }
+
+    fun createGitHubRepository(name: String, private: Boolean, addBuildWorkflow: Boolean) {
+        val repoName = name.trim()
+        if (!GitHubProjects.isValidRepoName(repoName)) {
+            _state.update { it.copy(githubProjectMessage = str(R.string.gh_invalid_repo_name), githubProjectError = true) }
+            return
+        }
+        githubProjectAction("create") { project ->
+            if (addBuildWorkflow) writeBuildWorkflow(project)
+            val (exit, output) = runProjectGitScript(
+                project,
+                GIT_IDENTITY_SCRIPT + """
+                    # The runtime's Git 2.25 predates `git init -b`.
+                    if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then git init -q && git symbolic-ref HEAD refs/heads/main; fi
+                    git add -A
+                    if [ -f ${GitHubProjects.KEYSTORE_PATH} ]; then git add -f ${GitHubProjects.KEYSTORE_PATH}; fi
+                    if ! git diff --cached --quiet || ! git rev-parse HEAD >/dev/null 2>&1; then
+                      git commit -q --allow-empty -m "Create ${'$'}MH_REPO with Mobile Harness"
+                    fi
+                    "${'$'}GH" repo create "${'$'}MH_REPO" "--${'$'}MH_VISIBILITY" --source . --remote origin --push
+                """.trimIndent(),
+                mapOf("MH_REPO" to repoName, "MH_VISIBILITY" to if (private) "private" else "public"),
+            )
+            check(exit == 0) { lastLine(output, str(R.string.gh_create_failed)) }
+            str(R.string.gh_repo_created, repoName)
+        }
+    }
+
+    fun commitAndPushProject(message: String) {
+        val clean = message.trim().ifBlank { str(R.string.gh_default_commit_message) }
+        githubProjectAction("push") { project ->
+            val (exit, output) = runProjectGitScript(project, GIT_IDENTITY_SCRIPT + GIT_PUSH_SCRIPT, mapOf("MH_MESSAGE" to clean))
+            check(exit == 0) { lastLine(output, str(R.string.gh_push_failed)) }
+            str(R.string.gh_pushed)
+        }
+    }
+
+    fun addBuildWorkflowToProject() {
+        githubProjectAction("workflow") { project ->
+            writeBuildWorkflow(project)
+            val (exit, output) = runProjectGitScript(
+                project,
+                GIT_IDENTITY_SCRIPT + GIT_PUSH_SCRIPT,
+                mapOf("MH_MESSAGE" to str(R.string.gh_workflow_commit_message)),
+            )
+            check(exit == 0) { lastLine(output, str(R.string.gh_push_failed)) }
+            str(R.string.gh_workflow_added)
+        }
+    }
+
+    fun startGitHubBuild() {
+        val info = _state.value.githubProject
+        val repo = info.repoFullName ?: return
+        githubProjectAction("build") {
+            val arguments = mutableListOf("workflow", "run", "build-apk.yml", "-R", repo)
+            info.branch.takeIf(String::isNotBlank)?.let { arguments += listOf("--ref", it) }
+            val (exit, output) = runGitHubCli(arguments)
+            check(exit == 0) { lastLine(output, str(R.string.gh_build_start_failed)) }
+            str(R.string.gh_build_started)
+        }
+    }
+
+    /** Sends the end of a failed build's log to the coding agent. */
+    fun fixGitHubBuildWithAgent(run: GitHubRun) {
+        val repo = _state.value.githubProject.repoFullName ?: return
+        githubProjectAction("fix-${run.id}") {
+            val (exit, output) = runGitHubCli(listOf("run", "view", run.id.toString(), "-R", repo, "--log-failed"))
+            val log = if (exit == 0) GitHubProjects.logTail(output) else lastLine(output, "(no log available)")
+            withContext(Dispatchers.Main) {
+                sendPrompt(str(R.string.gh_fix_prompt, run.number, log))
+            }
+            str(R.string.gh_fix_sent)
+        }
+    }
+
+    fun installGitHubRelease(release: GitHubApkRelease) {
+        val repo = _state.value.githubProject.repoFullName ?: return
+        githubProjectAction("install-${release.buildNumber}") { project ->
+            val (exit, output) = runProjectGitScript(
+                project,
+                """
+                    set -e
+                    if [ -d .git ]; then grep -qx '${GitHubProjects.DOWNLOAD_DIR}/' .git/info/exclude 2>/dev/null || echo '${GitHubProjects.DOWNLOAD_DIR}/' >> .git/info/exclude; fi
+                    "${'$'}GH" release download "${'$'}MH_TAG" -R "${'$'}MH_REPO" --pattern "${'$'}MH_ASSET" --dir ${GitHubProjects.DOWNLOAD_DIR} --clobber
+                """.trimIndent(),
+                mapOf("MH_TAG" to release.tag, "MH_REPO" to repo, "MH_ASSET" to release.assetName),
+            )
+            check(exit == 0) { lastLine(output, str(R.string.gh_download_failed)) }
+            val apk = File(projectWorkspaceRoot(project), "${GitHubProjects.DOWNLOAD_DIR}/${release.assetName}")
+            withContext(Dispatchers.Main) {
+                AndroidAppInstaller.install(getApplication(), apk)
+            }
+            str(R.string.gh_install_started, release.buildNumber)
+        }
+    }
+
+    fun dismissGitHubProjectMessage() {
+        _state.update { it.copy(githubProjectMessage = null, githubProjectError = false) }
     }
 
     private fun openExternalUrl(url: String) {
@@ -4663,10 +4882,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (_state.value.agentKind == AgentKind.ANTIGRAVITY &&
             _state.value.antigravityAuth.status != AntigravityAuthStatus.SIGNED_IN) {
             _state.update { it.copy(toastMessage = str(R.string.vm_antigravity_signin_before_task)) }
-            return
-        }
-        if (_state.value.agentKind == AgentKind.DEEPSEEK_HARNESS && _state.value.provider.kind == ProviderKind.CLAUDE) {
-            _state.update { it.copy(toastMessage = str(R.string.vm_dsh_claude_unsupported)) }
             return
         }
         val attachments = state.value.pendingAttachments

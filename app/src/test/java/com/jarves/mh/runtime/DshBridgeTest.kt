@@ -324,11 +324,6 @@ class DshRouteMapperTest {
         assertEquals("openai-completions", route.custom?.api)
         assertEquals("https://integrate.api.nvidia.com/v1", route.custom?.baseUrl)
     }
-
-    @Test(expected = IllegalArgumentException::class)
-    fun claudeSubscriptionIsRejected() {
-        DshRouteMapper.forProfile(ProviderProfile(ProviderKind.CLAUDE))
-    }
 }
 
 class AgentProviderPresetTest {
@@ -348,7 +343,7 @@ class AgentProviderPresetTest {
             dshApi = "openai-completions",
         )
         assertEquals(ProviderProtocol.OPENAI_CHAT, providerProtocolForAgent(profile, AgentKind.DEEPSEEK_HARNESS))
-        assertEquals(ProviderProtocol.ANTHROPIC_GATEWAY, providerProtocolForAgent(profile, AgentKind.CLAUDE_CODE))
+        assertEquals(ProviderProtocol.ANTHROPIC_GATEWAY, providerProtocolForAgent(profile, AgentKind.ANTIGRAVITY))
     }
 
     @Test
@@ -374,26 +369,25 @@ class AgentProviderPresetTest {
     }
 
     @Test
-    fun dshHarnessExcludesClaudeSubscription() {
-        assertFalse(ProviderKind.CLAUDE in DEEPSEEK_HARNESS_PROVIDERS)
+    fun dshHarnessOffersEveryProvider() {
         assertTrue(ProviderKind.OPENCODE_ZEN in DEEPSEEK_HARNESS_PROVIDERS)
         assertTrue(ProviderKind.DEEPSEEK in DEEPSEEK_HARNESS_PROVIDERS)
         assertTrue(ProviderKind.NVIDIA_NIM in DEEPSEEK_HARNESS_PROVIDERS)
-        assertEquals(7, DEEPSEEK_HARNESS_PROVIDERS.size)
+        assertEquals(ProviderKind.entries.toSet(), DEEPSEEK_HARNESS_PROVIDERS)
     }
 
     @Test
-    fun openCodeZenIsOnlyShownForDeepSeekHarness() {
+    fun antigravityUsesItsOwnSignIn() {
         assertTrue(ProviderKind.OPENCODE_ZEN in providersForAgent(AgentKind.DEEPSEEK_HARNESS))
-        assertFalse(ProviderKind.OPENCODE_ZEN in providersForAgent(AgentKind.CLAUDE_CODE))
+        assertTrue(providersForAgent(AgentKind.ANTIGRAVITY).isEmpty())
     }
 
     @Test
     fun agentKindsAreStable() {
-        assertEquals(AgentKind.CLAUDE_CODE, AgentKind.valueOf("CLAUDE_CODE"))
         assertEquals(AgentKind.DEEPSEEK_HARNESS, AgentKind.valueOf("DEEPSEEK_HARNESS"))
         assertEquals(AgentKind.ANTIGRAVITY, AgentKind.fromStored("antigravity"))
-        assertEquals(AgentKind.CLAUDE_CODE, AgentKind.fromStored("CLAUDE_CODE"))
+        // Installs that used the removed Claude Code agent fall back to Antigravity.
+        assertEquals(AgentKind.ANTIGRAVITY, AgentKind.fromStored("claude-code"))
         assertEquals(AgentKind.DEEPSEEK_HARNESS, AgentKind.fromStored("DEEPSEEK_HARNESS"))
     }
 }
