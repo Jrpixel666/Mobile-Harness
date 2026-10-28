@@ -1,0 +1,91 @@
+name: Build APK
+
+# Builds the online (small) arm64 APK on every push to main and publishes it as
+# release build-<run number> with mobile-harness-update.json, which the in-app
+# updater reads from the latest release.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: build-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+env:
+  NDK_VERSION: 28.2.13676358
+  AGY_BUNDLE: pocketdev-agy-arm64-2026.09.1.tar.zst
+  AGY_SHA256: a659ab9188956fc4721ca86fb21b5118e0e489f47a5e02ae6b4f2fb423659d78
+  RUNTIME_RELEASE: https://github.com/techjarves/Mobile-Harness/releases/download/runtime-2026.09.4
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Install the NDK and CMake
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;$NDK_VERSION" "cmake;3.22.1" > /dev/null
+
+      - name: Fetch the bundled Antigravity runtime
+        run: |
+          curl -fsSL --retry 3 -o "dist/runtime-bundles/$AGY_BUNDLE" "$RUNTIME_RELEASE/$AGY_BUNDLE"
+          echo "$AGY_SHA256  dist/runtime-bundles/$AGY_BUNDLE" | sha256sum -c -
+
+      - name: Unit tests
+        run: ./gradlew testOnlineDebugUnitTest --no-daemon
+
+      - name: Build the APK
+        env:
+          MH_UPLOAD_STORE_FILE: signing/release.p12
+          MH_UPLOAD_STORE_PASSWORD: mobile-harness-fork
+          MH_UPLOAD_KEY_ALIAS: release
+          MH_UPLOAD_KEY_PASSWORD: mobile-harness-fork
+        run: |
+          base64 -d signing/release.keystore.b64 > signing/release.p12
+          ./gradlew assembleOnlineRelease --no-daemon \
+            -PappVersionCode=$((1000 + ${{ github.run_number }})) \
+            -PappVersionName=1.0.7-fork.${{ github.run_number }}
+
+      - name: Name the APK and write the update manifest
+        run: |
+          n=${{ github.run_number }}
+          apk=mobile-harness-fork-build-$n.apk
+          cp app/build/outputs/apk/online/release/app-online-release.apk "$apk"
+          cat > mobile-harness-update.json <<JSON
+          {
+            "versionCode": $((1000 + n)),
+            "versionName": "1.0.7-fork.$n",
+            "notes": "Build $n of the Mobile Harness fork.",
+            "artifacts": {
+              "online": {
+                "url": "https://github.com/${{ github.repository }}/releases/download/build-$n/$apk",
+                "sha256": "$(sha256sum "$apk" | cut -d' ' -f1)",
+                "sizeBytes": $(stat -c %s "$apk")
+              }
+            }
+          }
+          JSON
+          cat mobile-harness-update.json
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: Build ${{ github.run_number }}
+          make_latest: true
+          files: |
+            mobile-harness-fork-build-*.apk
+            mobile-harness-update.json

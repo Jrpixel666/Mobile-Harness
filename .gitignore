@@ -64,3 +64,6 @@ dist/runtime-bundles/sources/
 
 # Generated local in-app update test artifacts.
 dist/update-test/
+
+# Shared debug key that GitHub builds of on-phone projects sign with.
+!app/src/main/assets/github/debug.keystore
