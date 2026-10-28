@@ -16,7 +16,7 @@ class LocalModelServerTest {
         val command = LocalModelServer.serverCommand("/lib/libllamaserver.so", "/models/a.gguf", "a")
         assertEquals("/lib/libllamaserver.so", command.first())
         assertEquals("127.0.0.1", command[command.indexOf("--host") + 1])
-        assertEquals(LocalModelServer.PORT.toString(), command[command.indexOf("--port") + 1])
+        assertEquals(LocalModelServer.SERVER_PORT.toString(), command[command.indexOf("--port") + 1])
         assertTrue("--jinja" in command)
         assertEquals("/models/a.gguf", command[command.indexOf("-m") + 1])
     }

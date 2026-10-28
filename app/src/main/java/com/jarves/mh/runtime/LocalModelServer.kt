@@ -26,8 +26,8 @@ data class LocalModelStatus(val model: LocalModel, val downloaded: Boolean)
 
 /**
  * Runs llama.cpp's llama-server, packaged as libllamaserver.so, directly on Android (not inside
- * PRoot) on 127.0.0.1. Agents in the Linux runtime share the phone's network, so they reach it at
- * [BASE_URL] like any OpenAI-compatible server.
+ * PRoot) on 127.0.0.1, behind [LocalModelGateway]. Agents in the Linux runtime share the phone's
+ * network, so they reach it at [BASE_URL] like any OpenAI-compatible server.
  */
 class LocalModelServer(context: Context) {
     private val app = context.applicationContext
@@ -111,6 +111,7 @@ class LocalModelServer(context: Context) {
     }
 
     @Volatile private var process: Process? = null
+    @Volatile private var gateway: LocalModelGateway? = null
     @Volatile private var runningModelId: String? = null
 
     /** Starts the server for [modelId] unless it already serves it; waits until it answers. */
@@ -130,6 +131,7 @@ class LocalModelServer(context: Context) {
             .start()
         process = started
         runningModelId = model.id
+        gateway = LocalModelGateway(PORT, "http://$HOST:$SERVER_PORT").start()
         val deadline = System.currentTimeMillis() + START_TIMEOUT_MS
         while (System.currentTimeMillis() < deadline) {
             if (!started.isAlive) {
@@ -144,6 +146,8 @@ class LocalModelServer(context: Context) {
     }
 
     fun stop() {
+        gateway?.close()
+        gateway = null
         process?.let { running ->
             running.destroy()
             if (!running.waitFor(3, java.util.concurrent.TimeUnit.SECONDS)) running.destroyForcibly()
@@ -153,7 +157,7 @@ class LocalModelServer(context: Context) {
     }
 
     private fun isHealthy(): Boolean = runCatching {
-        val connection = (URL("http://$HOST:$PORT/health").openConnection() as HttpURLConnection).apply {
+        val connection = (URL("http://$HOST:$SERVER_PORT/health").openConnection() as HttpURLConnection).apply {
             connectTimeout = 1_000
             readTimeout = 2_000
         }
@@ -179,7 +183,10 @@ class LocalModelServer(context: Context) {
 
     companion object {
         const val HOST = "127.0.0.1"
+        /** The agent's address: [LocalModelGateway], which repairs tool calls. */
         const val PORT = 8181
+        /** llama-server itself, reached only through the gateway. */
+        const val SERVER_PORT = 8182
         const val BASE_URL = "http://$HOST:$PORT/v1"
         /** Coding agents send long system prompts and file contents; smaller contexts overflow. */
         const val CONTEXT_TOKENS = 16_384
@@ -192,7 +199,7 @@ class LocalModelServer(context: Context) {
             "-m", modelPath,
             "--alias", alias,
             "--host", HOST,
-            "--port", PORT.toString(),
+            "--port", SERVER_PORT.toString(),
             "--jinja",
             "-c", CONTEXT_TOKENS.toString(),
             "--no-webui",
