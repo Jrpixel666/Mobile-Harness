@@ -37,6 +37,14 @@ class LocalModelServer(context: Context) {
     private val modelsDir = File(app.filesDir, "models").apply { mkdirs() }
     private val logFile = File(app.cacheDir, "llama-server.log")
     private val warmupFile = File(modelsDir, "agent-warmup.json")
+    /** Held only while the model is working, so a dark screen does not pause it. */
+    private val wakeLock = app.getSystemService(android.os.PowerManager::class.java)
+        .newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "mh:on-device-model")
+        .apply { setReferenceCounted(true) }
+
+    init {
+        active = this
+    }
     private val _progress = kotlinx.coroutines.flow.MutableStateFlow<LocalModelProgress?>(null)
     val progress: kotlinx.coroutines.flow.StateFlow<LocalModelProgress?> = _progress
 
@@ -134,6 +142,7 @@ class LocalModelServer(context: Context) {
         check(isDownloaded(model)) { "${model.title} is not downloaded yet. Download it in Agent → AI provider." }
         if (runningModelId == model.id && process?.isAlive == true && isHealthy()) return@withContext
         stop()
+        killOrphanedServers()
         val libraryDir = app.applicationInfo.nativeLibraryDir
         val threads = performanceCores(coreMaxFrequencies())
         this@LocalModelServer.threads = threads
@@ -152,9 +161,16 @@ class LocalModelServer(context: Context) {
             .start()
         process = started
         runningModelId = model.id
-        val startedGateway = LocalModelGateway(PORT, "http://$HOST:$SERVER_PORT", warmupFile) { processed, total ->
-            _progress.value = LocalModelProgress(processed, total)
-        }.start()
+        val startedGateway = LocalModelGateway(
+            PORT,
+            "http://$HOST:$SERVER_PORT",
+            warmupFile,
+            onProgress = { processed, total -> _progress.value = LocalModelProgress(processed, total) },
+            onBusy = { busy ->
+                // A lock that already timed out throws on release; that is harmless here.
+                if (busy) wakeLock.acquire(WAKE_LOCK_MAX_MS) else runCatching { if (wakeLock.isHeld) wakeLock.release() }
+            },
+        ).start()
         gateway = startedGateway
         val deadline = System.currentTimeMillis() + START_TIMEOUT_MS
         while (System.currentTimeMillis() < deadline) {
@@ -163,6 +179,7 @@ class LocalModelServer(context: Context) {
                 error("The on-device model stopped while loading: ${logTail()}")
             }
             if (isHealthy()) {
+                LocalModelService.start(app, model.title)
                 // Read the agent's saved instructions now, so the first request finds them cached.
                 Thread({ startedGateway.warmUp() }, "mh-local-model-warmup").apply { isDaemon = true; start() }
                 return@withContext
@@ -174,6 +191,7 @@ class LocalModelServer(context: Context) {
     }
 
     fun stop() {
+        LocalModelService.stop(app)
         gateway?.close()
         gateway = null
         process?.let { running ->
@@ -191,6 +209,17 @@ class LocalModelServer(context: Context) {
         }
         try { connection.responseCode == 200 } finally { connection.disconnect() }
     }.getOrDefault(false)
+
+    /** A server left behind when Android killed the app still holds the port; end it first. */
+    private fun killOrphanedServers() {
+        val own = android.os.Process.myPid()
+        File("/proc").listFiles { file -> file.name.all(Char::isDigit) }.orEmpty().forEach { dir ->
+            val pid = dir.name.toInt()
+            if (pid == own) return@forEach
+            val command = runCatching { File(dir, "cmdline").readText() }.getOrNull() ?: return@forEach
+            if ("libllamaserver.so" in command) runCatching { android.os.Process.killProcess(pid) }
+        }
+    }
 
     private fun coreMaxFrequencies(): List<Long> =
         (0 until Runtime.getRuntime().availableProcessors()).mapNotNull { cpu ->
@@ -242,6 +271,11 @@ class LocalModelServer(context: Context) {
         }
 
         private const val FALLBACK_THREADS = 4
+        private const val WAKE_LOCK_MAX_MS = 30 * 60_000L
+
+        /** The server the notification's Stop button ends. */
+        @Volatile var active: LocalModelServer? = null
+            private set
         private const val MAX_THREADS = 8
 
         internal fun serverCommand(

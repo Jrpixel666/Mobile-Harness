@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources>
+<!-- English only for now; other languages fall back to these. -->
+<resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">
     <!-- GitHub panel for a project: repository, commits, Actions builds and APK releases. -->
     <string name="gh_panel_title">GitHub</string>
     <string name="gh_open_panel">GitHub: commit, builds and installs</string>

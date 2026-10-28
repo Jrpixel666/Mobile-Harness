@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources>
+<!-- English only for now; other languages fall back to these. -->
+<resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">
     <!-- On-device model provider: llama.cpp running GGUF models on the phone. -->
     <string name="provider_title_local">On-device model</string>
     <string name="provider_subtitle_local">Runs on this phone · no key or internet</string>
@@ -19,4 +20,9 @@
     <string name="local_writing">On-device model writing</string>
     <string name="local_writing_detail">Read %1$,d tokens; writing the reply.</string>
     <string name="local_loaded_detail">%1$s loaded in %2$d s. The first reply reads the agent\'s instructions and can take a few minutes.</string>
+    <string name="local_service_title">On-device model running</string>
+    <string name="local_service_text">%1$s stays loaded while you use other apps.</string>
+    <string name="local_service_stop">Stop model</string>
+    <string name="local_test_ok">On-device model loaded. It reads the agent\'s saved instructions in the background; tasks wait for that to finish.</string>
+    <string name="local_ready_idle">Ready on this phone. The model loads when a task starts.</string>
 </resources>

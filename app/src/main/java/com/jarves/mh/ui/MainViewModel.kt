@@ -2880,9 +2880,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         models: List<com.jarves.mh.network.DiscoveredModel>,
     ): ConnectionValidation {
         if (profile.kind == ProviderKind.LOCAL) {
-            runCatching { localModelServer.ensureRunning(profile.model) }.onFailure { error ->
-                return ConnectionValidation.Failure(error.message ?: str(R.string.vm_unknown_error))
-            }
+            // Loading is the whole check: a chat request would queue behind the warm-up.
+            return runCatching { localModelServer.ensureRunning(profile.model) }.fold(
+                onSuccess = { ConnectionValidation.Success(str(R.string.local_test_ok)) },
+                onFailure = { error -> ConnectionValidation.Failure(error.message ?: str(R.string.vm_unknown_error)) },
+            )
         }
         val key = secret.ifBlank { vault.get(profile.kind.name).orEmpty() }
         return providerApi.validate(
@@ -2907,6 +2909,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         val profile = _state.value.provider
+        if (profile.kind == ProviderKind.LOCAL) {
+            // Starting the model just to ping it would cost minutes of warm-up on every launch.
+            val downloaded = localModelServer.statuses().any { it.downloaded && it.model.id == profile.model }
+            _state.update {
+                it.copy(
+                    apiPingStatus = if (downloaded) ApiPingStatus.OK else ApiPingStatus.FAILED,
+                    apiPingMessage = str(if (downloaded) R.string.local_ready_idle else R.string.local_none_downloaded),
+                )
+            }
+            return
+        }
         if (profile.baseUrl.isBlank() || profile.model.isBlank()) return
         if (_state.value.apiPingStatus == ApiPingStatus.PINGING) return
         _state.update { it.copy(apiPingStatus = ApiPingStatus.PINGING, apiPingMessage = str(R.string.vm_ping_sending)) }

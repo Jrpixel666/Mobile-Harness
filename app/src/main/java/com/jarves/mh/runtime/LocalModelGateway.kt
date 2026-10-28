@@ -29,6 +29,8 @@ internal class LocalModelGateway(
     private val upstream: String,
     private val warmupFile: File,
     private val onProgress: (processed: Int, total: Int) -> Unit,
+    /** Called with true before the model starts working on a request and false after. */
+    private val onBusy: (Boolean) -> Unit = {},
 ) : AutoCloseable {
     private val running = AtomicBoolean(true)
     private val server = ServerSocket(port, 8, InetAddress.getByName("127.0.0.1")).apply { reuseAddress = true }
@@ -142,6 +144,15 @@ internal class LocalModelGateway(
 
     /** Streams [request] from llama-server; returns the assembled completion or the error body. */
     private fun streamCompletion(request: JSONObject): Pair<Int, Any> {
+        onBusy(true)
+        try {
+            return streamCompletionNow(request)
+        } finally {
+            onBusy(false)
+        }
+    }
+
+    private fun streamCompletionNow(request: JSONObject): Pair<Int, Any> {
         val upstreamRequest = JSONObject(request.toString())
             .put("stream", true)
             .put("return_progress", true)
