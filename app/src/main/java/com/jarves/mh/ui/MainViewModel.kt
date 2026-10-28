@@ -471,6 +471,16 @@ data class HuggingFaceBrowserState(
     val hasToken: Boolean = false,
 )
 
+/** State of the plain on-device chat. */
+data class LocalChatState(
+    val messages: List<com.jarves.mh.runtime.LocalChatMessage> = emptyList(),
+    val modelId: String? = null,
+    val busy: Boolean = false,
+    /** What the model is doing before the first words arrive. */
+    val status: String? = null,
+    val error: String? = null,
+)
+
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     /** Resolves a user-visible string in the language selected in the app. */
     private fun str(@StringRes id: Int, vararg args: Any): String = AppStrings.get(getApplication(), id, *args)
@@ -4245,6 +4255,82 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             localModelServer.delete(model)
             refreshLocalModels()
         }
+    }
+
+    private val _localChat = MutableStateFlow(LocalChatState())
+    /** The plain chat with the on-device model, separate from agent tasks. */
+    val localChat: StateFlow<LocalChatState> = _localChat.asStateFlow()
+    private var localChatJob: kotlinx.coroutines.Job? = null
+    @Volatile private var localChatCancelled = false
+
+    fun selectLocalChatModel(modelId: String) {
+        _localChat.update { it.copy(modelId = modelId, error = null) }
+    }
+
+    /** The model the chat uses: the one picked, else the agent's on-device model, else any downloaded one. */
+    private fun localChatModel(): String? {
+        val downloaded = _state.value.localModels.filter { it.downloaded }.map { it.model.id }
+        val picked = _localChat.value.modelId
+        val agentModel = _state.value.provider.takeIf { it.kind == ProviderKind.LOCAL }?.model
+        return listOfNotNull(picked, agentModel).firstOrNull { it in downloaded } ?: downloaded.firstOrNull()
+    }
+
+    fun sendLocalChat(text: String) {
+        val question = text.trim()
+        if (question.isEmpty() || _localChat.value.busy) return
+        val modelId = localChatModel()
+        if (modelId == null) {
+            _localChat.update { it.copy(error = str(R.string.chat_no_model)) }
+            return
+        }
+        val history = _localChat.value.messages + com.jarves.mh.runtime.LocalChatMessage(true, question)
+        localChatCancelled = false
+        _localChat.update {
+            it.copy(modelId = modelId, messages = history + com.jarves.mh.runtime.LocalChatMessage(false, ""), busy = true, error = null, status = str(R.string.chat_loading))
+        }
+        localChatJob = viewModelScope.launch(Dispatchers.IO) {
+            try {
+                localModelServer.ensureRunning(modelId, warmUp = false)
+                _localChat.update { it.copy(status = str(R.string.chat_thinking)) }
+                localModelServer.holdAwake(true)
+                try {
+                    com.jarves.mh.runtime.LocalChat.stream(
+                        "http://${com.jarves.mh.runtime.LocalModelServer.HOST}:${com.jarves.mh.runtime.LocalModelServer.SERVER_PORT}",
+                        history,
+                        cancelled = { localChatCancelled },
+                    ) { content, reasoning ->
+                        _localChat.update { chat ->
+                            val last = chat.messages.last()
+                            chat.copy(
+                                messages = chat.messages.dropLast(1) + last.copy(text = last.text + content, thinking = last.thinking + reasoning),
+                                status = null,
+                            )
+                        }
+                    }
+                } finally {
+                    localModelServer.holdAwake(false)
+                }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                if (!localChatCancelled) _localChat.update { it.copy(error = error.message ?: str(R.string.vm_unknown_error)) }
+            } finally {
+                _localChat.update { chat ->
+                    val last = chat.messages.lastOrNull()
+                    val messages = if (last != null && !last.fromUser && last.text.isBlank() && last.thinking.isBlank()) chat.messages.dropLast(1) else chat.messages
+                    chat.copy(messages = messages, busy = false, status = null)
+                }
+            }
+        }
+    }
+
+    fun stopLocalChat() {
+        localChatCancelled = true
+    }
+
+    fun clearLocalChat() {
+        if (_localChat.value.busy) return
+        _localChat.update { it.copy(messages = emptyList(), error = null) }
     }
 
     /** Loads the on-device model before a task; reports failures in the chat like other runtime errors. */

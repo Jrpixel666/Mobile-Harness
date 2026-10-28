@@ -223,8 +223,11 @@ class LocalModelServer(
     @Volatile private var gateway: LocalModelGateway? = null
     @Volatile private var runningModelId: String? = null
 
-    /** Starts the server for [modelId] unless it already serves it; waits until it answers. */
-    suspend fun ensureRunning(modelId: String): Unit = withContext(Dispatchers.IO) {
+    /**
+     * Starts the server for [modelId] unless it already serves it; waits until it answers. With
+     * [warmUp] off (plain chat) the agent's instructions are not read ahead, keeping the CPU free.
+     */
+    suspend fun ensureRunning(modelId: String, warmUp: Boolean = true): Unit = withContext(Dispatchers.IO) {
         val model = find(modelId)
             ?: error("Pick an on-device model in Agent → AI provider.")
         check(isDownloaded(model)) { "${model.title} is not downloaded yet. Download it in Agent → AI provider." }
@@ -255,10 +258,8 @@ class LocalModelServer(
             "http://$HOST:$SERVER_PORT",
             warmupFile,
             onProgress = { processed, total -> _progress.value = LocalModelProgress(processed, total) },
-            onBusy = { busy ->
-                // A lock that already timed out throws on release; that is harmless here.
-                if (busy) wakeLock.acquire(WAKE_LOCK_MAX_MS) else runCatching { if (wakeLock.isHeld) wakeLock.release() }
-            },
+            // A lock that already timed out throws on release; that is harmless here.
+            onBusy = ::holdAwake,
         ).start()
         gateway = startedGateway
         val deadline = System.currentTimeMillis() + START_TIMEOUT_MS
@@ -270,13 +271,22 @@ class LocalModelServer(
             if (isHealthy()) {
                 LocalModelService.start(app, model.title)
                 // Read the agent's saved instructions now, so the first request finds them cached.
-                Thread({ startedGateway.warmUp() }, "mh-local-model-warmup").apply { isDaemon = true; start() }
+                if (warmUp) {
+                    Thread({ startedGateway.warmUp() }, "mh-local-model-warmup").apply { isDaemon = true; start() }
+                } else {
+                    startedGateway.skipWarmUp()
+                }
                 return@withContext
             }
             delay(500)
         }
         stop()
         error("The on-device model took too long to load. Try a smaller model.")
+    }
+
+    /** Keeps the CPU awake while the plain chat streams an answer, as the gateway does for agents. */
+    fun holdAwake(busy: Boolean) {
+        if (busy) wakeLock.acquire(WAKE_LOCK_MAX_MS) else runCatching { if (wakeLock.isHeld) wakeLock.release() }
     }
 
     fun stop() {
@@ -338,7 +348,7 @@ class LocalModelServer(
         const val HOST = "127.0.0.1"
         /** The agent's address: [LocalModelGateway], which repairs tool calls. */
         const val PORT = 8181
-        /** llama-server itself, reached only through the gateway. */
+        /** llama-server itself, reached through the gateway by agents and directly by the plain chat. */
         const val SERVER_PORT = 8182
         const val BASE_URL = "http://$HOST:$PORT/v1"
         /**

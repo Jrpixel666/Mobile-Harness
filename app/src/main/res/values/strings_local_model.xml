@@ -71,4 +71,13 @@
     <string name="hf_token_field">Hugging Face token</string>
     <string name="hf_token_save">Save token</string>
     <string name="hf_token_remove">Remove token</string>
+    <string name="tab_ask">Ask</string>
+    <string name="chat_title">Ask the on-device model</string>
+    <string name="chat_empty">Ask anything. Answers come from the model on this phone, offline. Nothing is built or changed; use the Agent tab for coding tasks.</string>
+    <string name="chat_no_model">Download a model first in Agent → AI provider → On-device model.</string>
+    <string name="chat_no_model_short">No model downloaded</string>
+    <string name="chat_hint">Ask a question</string>
+    <string name="chat_clear">Clear</string>
+    <string name="chat_loading">Loading the model…</string>
+    <string name="chat_thinking">Thinking…</string>
 </resources>

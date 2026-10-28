@@ -282,6 +282,7 @@ import androidx.compose.material3.ExtendedFloatingActionButton
 
 private enum class RootScreen(@StringRes val labelRes: Int, val icon: ImageVector) {
     PROJECTS(R.string.tab_projects, Icons.Default.Folder),
+    ASK(R.string.tab_ask, Icons.Default.AutoAwesome),
     AGENT(R.string.tab_agent, Icons.Default.SmartToy),
     SETTINGS(R.string.tab_settings, Icons.Default.Settings),
 }
@@ -2521,6 +2522,18 @@ private fun RootScreenHost(
                     onToggleTheme = viewModel::toggleTheme,
                     onInstallUpdate = viewModel::installAppUpdate,
                 )
+                RootScreen.ASK -> {
+                    val localChat by viewModel.localChat.collectAsStateWithLifecycle()
+                    LocalChatScreen(
+                        chat = localChat,
+                        models = state.localModels,
+                        onSelectModel = viewModel::selectLocalChatModel,
+                        onSend = viewModel::sendLocalChat,
+                        onStop = viewModel::stopLocalChat,
+                        onClear = viewModel::clearLocalChat,
+                        onRefreshModels = viewModel::refreshLocalModels,
+                    )
+                }
                 RootScreen.AGENT -> AgentScreen(
                     state = state,
                     onSaveProvider = { profile, key ->
