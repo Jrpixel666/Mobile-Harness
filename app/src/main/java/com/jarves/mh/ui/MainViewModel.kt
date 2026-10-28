@@ -349,6 +349,8 @@ data class AppUiState(
     val localModelProgress: Float = 0f,
     val localModelMessage: String? = null,
     val deviceRamGb: Int = 0,
+    /** Hugging Face model browser shown under the on-device model list. */
+    val huggingFace: HuggingFaceBrowserState = HuggingFaceBrowserState(),
     val activeProject: Project? = null,
     val workspaceVisible: Boolean = false,
     val readOnlyProject: Project? = null,
@@ -444,6 +446,25 @@ data class AppUiState(
     val appUpdateDownloadedBytes: Long = 0L,
     val appUpdateTotalBytes: Long = -1L,
     val appUpdateError: String? = null,
+)
+
+/** Everything the inline Hugging Face browser shows; kept here so scrolling never loses it. */
+data class HuggingFaceBrowserState(
+    val open: Boolean = false,
+    val device: com.jarves.mh.network.DeviceProfile? = null,
+    val section: com.jarves.mh.network.HfSection? = com.jarves.mh.network.HfSection.CODING,
+    val query: String = "",
+    val onlyFits: Boolean = true,
+    val onlyTools: Boolean = true,
+    val repos: List<com.jarves.mh.network.HfRepo> = emptyList(),
+    val openRepo: com.jarves.mh.network.HfRepo? = null,
+    val files: List<com.jarves.mh.network.HfModelFile> = emptyList(),
+    /** Non-null while showing "Scan this phone" results. */
+    val recommendations: List<com.jarves.mh.network.ModelRecommendation>? = null,
+    val loading: Boolean = false,
+    val scanning: Boolean = false,
+    val error: String? = null,
+    val hasToken: Boolean = false,
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -4078,6 +4099,102 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun supportedLlamaArchitectures(): Set<String> =
         BuildConfig.LLAMA_ARCHITECTURES.split(',').filter(String::isNotBlank).toSet()
+
+    private var huggingFaceJob: kotlinx.coroutines.Job? = null
+
+    private fun updateHuggingFace(change: (HuggingFaceBrowserState) -> HuggingFaceBrowserState) {
+        _state.update { it.copy(huggingFace = change(it.huggingFace)) }
+    }
+
+    /** Runs one browser load at a time; a newer request replaces an older one. */
+    private fun loadHuggingFace(scanning: Boolean = false, block: suspend () -> Unit) {
+        huggingFaceJob?.cancel()
+        updateHuggingFace { it.copy(loading = !scanning, scanning = scanning, error = null) }
+        huggingFaceJob = viewModelScope.launch {
+            try {
+                block()
+            } catch (error: kotlinx.coroutines.CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                updateHuggingFace { it.copy(error = error.message ?: str(R.string.vm_unknown_error)) }
+            } finally {
+                updateHuggingFace { it.copy(loading = false, scanning = false) }
+            }
+        }
+    }
+
+    fun toggleHuggingFaceBrowser() {
+        val opening = !_state.value.huggingFace.open
+        updateHuggingFace { it.copy(open = opening, hasToken = hasHuggingFaceToken()) }
+        if (!opening) return
+        viewModelScope.launch {
+            val device = runCatching { deviceProfile() }.getOrNull()
+            updateHuggingFace { it.copy(device = device) }
+        }
+        if (_state.value.huggingFace.repos.isEmpty()) runHuggingFaceSearch()
+    }
+
+    private fun runHuggingFaceSearch() {
+        val browser = _state.value.huggingFace
+        loadHuggingFace {
+            val section = browser.section
+            val repos = if (section != null) {
+                searchHuggingFaceSection(section, browser.onlyFits)
+            } else {
+                searchHuggingFace(browser.query, browser.onlyFits)
+            }
+            updateHuggingFace { it.copy(repos = repos, openRepo = null, recommendations = null) }
+        }
+    }
+
+    fun searchHuggingFaceSectionInline(section: com.jarves.mh.network.HfSection) {
+        updateHuggingFace { it.copy(section = section, query = "") }
+        runHuggingFaceSearch()
+    }
+
+    fun setHuggingFaceQuery(query: String) = updateHuggingFace { it.copy(query = query) }
+
+    fun searchHuggingFaceQueryInline() {
+        if (_state.value.huggingFace.query.isBlank()) return
+        updateHuggingFace { it.copy(section = null) }
+        runHuggingFaceSearch()
+    }
+
+    /** Fitting is filtered by Hugging Face itself, so changing it searches again. */
+    fun setHuggingFaceOnlyFits(onlyFits: Boolean) {
+        updateHuggingFace { it.copy(onlyFits = onlyFits) }
+        runHuggingFaceSearch()
+    }
+
+    fun setHuggingFaceOnlyTools(onlyTools: Boolean) = updateHuggingFace { it.copy(onlyTools = onlyTools) }
+
+    fun openHuggingFaceRepo(repo: com.jarves.mh.network.HfRepo) {
+        updateHuggingFace { it.copy(openRepo = repo, files = emptyList()) }
+        loadHuggingFace {
+            val files = huggingFaceFiles(repo.id)
+            updateHuggingFace { if (it.openRepo?.id == repo.id) it.copy(files = files) else it }
+        }
+    }
+
+    /** Back from a repository's files, or from scan results, to the search. */
+    fun huggingFaceBack() = updateHuggingFace {
+        if (it.openRepo != null) it.copy(openRepo = null, files = emptyList()) else it.copy(recommendations = null)
+    }
+
+    fun scanPhoneForModels() {
+        updateHuggingFace { it.copy(openRepo = null, recommendations = null) }
+        loadHuggingFace(scanning = true) {
+            val device = deviceProfile()
+            updateHuggingFace { it.copy(device = device) }
+            val picks = scanForModels(device)
+            updateHuggingFace { it.copy(recommendations = picks) }
+        }
+    }
+
+    fun saveHuggingFaceToken(token: String) {
+        setHuggingFaceToken(token)
+        updateHuggingFace { it.copy(hasToken = hasHuggingFaceToken()) }
+    }
 
     fun hasHuggingFaceToken(): Boolean = vault.contains(HUGGING_FACE_TOKEN)
 

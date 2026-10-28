@@ -195,15 +195,9 @@ fun AgentScreen(
     onDownloadLocalModel: (String) -> Unit = {},
     onDeleteLocalModel: (String) -> Unit = {},
     onRefreshLocalModels: () -> Unit = {},
-    onSearchHuggingFace: suspend (String, Boolean) -> List<com.jarves.mh.network.HfRepo> = { _, _ -> emptyList() },
-    onSearchHuggingFaceSection: suspend (com.jarves.mh.network.HfSection, Boolean) -> List<com.jarves.mh.network.HfRepo> = { _, _ -> emptyList() },
-    hasHuggingFaceToken: () -> Boolean = { false },
-    onSaveHuggingFaceToken: (String) -> Unit = {},
-    onDeviceProfile: suspend () -> com.jarves.mh.network.DeviceProfile = { com.jarves.mh.network.DeviceProfile(0, 0, false, false, 0) },
-    onScanForModels: suspend (com.jarves.mh.network.DeviceProfile) -> List<com.jarves.mh.network.ModelRecommendation> = { emptyList() },
+    onToggleHuggingFace: () -> Unit = {},
+    huggingFaceActions: HuggingFaceActions = NoHuggingFaceActions,
     supportedLlamaArchitectures: Set<String> = emptySet(),
-    onHuggingFaceFiles: suspend (String) -> List<com.jarves.mh.network.HfModelFile> = { emptyList() },
-    onDownloadHuggingFace: (com.jarves.mh.network.HfModelFile) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -1157,15 +1151,9 @@ fun AgentScreen(
                             onDownload = onDownloadLocalModel,
                             onDelete = onDeleteLocalModel,
                             onRefresh = onRefreshLocalModels,
-                            onSearchHuggingFace = onSearchHuggingFace,
-                            onSearchHuggingFaceSection = onSearchHuggingFaceSection,
-                            hasHuggingFaceToken = hasHuggingFaceToken,
-                            onSaveHuggingFaceToken = onSaveHuggingFaceToken,
-                            onDeviceProfile = onDeviceProfile,
-                            onScanForModels = onScanForModels,
+                            onToggleHuggingFace = onToggleHuggingFace,
+                            huggingFaceActions = huggingFaceActions,
                             supportedArchitectures = supportedLlamaArchitectures,
-                            onHuggingFaceFiles = onHuggingFaceFiles,
-                            onDownloadHuggingFace = onDownloadHuggingFace,
                         )
                     }
                 }

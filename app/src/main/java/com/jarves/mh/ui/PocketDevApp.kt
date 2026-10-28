@@ -2547,15 +2547,22 @@ private fun RootScreenHost(
                     onDownloadLocalModel = viewModel::downloadLocalModel,
                     onDeleteLocalModel = viewModel::deleteLocalModel,
                     onRefreshLocalModels = viewModel::refreshLocalModels,
-                    onSearchHuggingFace = viewModel::searchHuggingFace,
-                    onSearchHuggingFaceSection = viewModel::searchHuggingFaceSection,
-                    hasHuggingFaceToken = viewModel::hasHuggingFaceToken,
-                    onSaveHuggingFaceToken = viewModel::setHuggingFaceToken,
-                    onDeviceProfile = viewModel::deviceProfile,
-                    onScanForModels = viewModel::scanForModels,
+                    onToggleHuggingFace = viewModel::toggleHuggingFaceBrowser,
+                    huggingFaceActions = remember(viewModel) {
+                        HuggingFaceActions(
+                            section = viewModel::searchHuggingFaceSectionInline,
+                            query = viewModel::setHuggingFaceQuery,
+                            search = viewModel::searchHuggingFaceQueryInline,
+                            onlyFits = viewModel::setHuggingFaceOnlyFits,
+                            onlyTools = viewModel::setHuggingFaceOnlyTools,
+                            openRepo = viewModel::openHuggingFaceRepo,
+                            back = viewModel::huggingFaceBack,
+                            scan = viewModel::scanPhoneForModels,
+                            download = viewModel::downloadHuggingFaceModel,
+                            saveToken = viewModel::saveHuggingFaceToken,
+                        )
+                    },
                     supportedLlamaArchitectures = remember { viewModel.supportedLlamaArchitectures() },
-                    onHuggingFaceFiles = viewModel::huggingFaceFiles,
-                    onDownloadHuggingFace = viewModel::downloadHuggingFaceModel,
                 )
                 RootScreen.SETTINGS -> SettingsScreen(
                     state = state,

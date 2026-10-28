@@ -167,6 +167,7 @@ android {
             version = "3.22.1"
         }
     }
+    testOptions.unitTests.isIncludeAndroidResources = true
     packaging.resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
     packaging.jniLibs.useLegacyPackaging = true
     androidResources.noCompress += "zst"
@@ -215,6 +216,10 @@ dependencies {
     implementation("com.github.luben:zstd-jni:1.5.7-12@aar")
 
     testImplementation("junit:junit:4.13.2")
+    // Compose screens rendered on the JVM, to catch crashes without a device.
+    testImplementation(platform("androidx.compose:compose-bom:2025.02.00"))
+    testImplementation("androidx.compose.ui:ui-test-junit4")
+    testImplementation("org.robolectric:robolectric:4.14.1")
     testImplementation("org.json:json:20250107")
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")

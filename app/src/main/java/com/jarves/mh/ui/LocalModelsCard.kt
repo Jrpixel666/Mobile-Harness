@@ -17,10 +17,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -39,34 +35,11 @@ fun LocalModelsCard(
     onDownload: (String) -> Unit,
     onDelete: (String) -> Unit,
     onRefresh: () -> Unit,
-    onSearchHuggingFace: suspend (String, Boolean) -> List<com.jarves.mh.network.HfRepo>,
-    onSearchHuggingFaceSection: suspend (com.jarves.mh.network.HfSection, Boolean) -> List<com.jarves.mh.network.HfRepo>,
-    hasHuggingFaceToken: () -> Boolean,
-    onSaveHuggingFaceToken: (String) -> Unit,
-    onDeviceProfile: suspend () -> com.jarves.mh.network.DeviceProfile,
-    onScanForModels: suspend (com.jarves.mh.network.DeviceProfile) -> List<com.jarves.mh.network.ModelRecommendation>,
+    onToggleHuggingFace: () -> Unit,
+    huggingFaceActions: HuggingFaceActions,
     supportedArchitectures: Set<String> = emptySet(),
-    onHuggingFaceFiles: suspend (String) -> List<com.jarves.mh.network.HfModelFile>,
-    onDownloadHuggingFace: (com.jarves.mh.network.HfModelFile) -> Unit,
 ) {
     LaunchedEffect(Unit) { onRefresh() }
-    var showSearch by rememberSaveable { mutableStateOf(false) }
-    if (showSearch) {
-        HuggingFaceSearchSheet(
-            ramGb = state.deviceRamGb,
-            downloading = state.localModelDownloading != null,
-            onSearch = onSearchHuggingFace,
-            onSearchSection = onSearchHuggingFaceSection,
-            hasToken = hasHuggingFaceToken(),
-            onSaveToken = onSaveHuggingFaceToken,
-            onDeviceProfile = onDeviceProfile,
-            onScan = onScanForModels,
-            supportedArchitectures = supportedArchitectures,
-            onFiles = onHuggingFaceFiles,
-            onDownload = onDownloadHuggingFace,
-            onDismiss = { showSearch = false },
-        )
-    }
     Surface(
         color = MaterialTheme.colorScheme.surface,
         shape = RoundedCornerShape(20.dp),
@@ -128,8 +101,17 @@ fun LocalModelsCard(
                     )
                 }
             }
-            OutlinedButton(onClick = { showSearch = true }, modifier = Modifier.fillMaxWidth()) {
-                Text(stringResource(R.string.hf_open))
+            OutlinedButton(onClick = onToggleHuggingFace, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(if (state.huggingFace.open) R.string.hf_close else R.string.hf_open))
+            }
+            if (state.huggingFace.open) {
+                HuggingFaceBrowser(
+                    state = state.huggingFace,
+                    ramGb = state.deviceRamGb,
+                    downloading = state.localModelDownloading != null,
+                    supportedArchitectures = supportedArchitectures,
+                    actions = huggingFaceActions,
+                )
             }
             state.localModelMessage?.let {
                 Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
