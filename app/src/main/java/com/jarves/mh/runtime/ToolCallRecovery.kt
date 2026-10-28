@@ -160,3 +160,74 @@ internal object ToolCallRecovery {
         return chunks.map { "data: $it\n\n" } + "data: [DONE]\n\n"
     }
 }
+
+/** Rebuilds one chat completion from llama-server's streamed chunks, reporting prompt progress. */
+internal class ChatStreamAssembler(private val onProgress: (processed: Int, total: Int) -> Unit = { _, _ -> }) {
+    private var id = "chatcmpl-local"
+    private var model = "local"
+    private var created = System.currentTimeMillis() / 1000
+    private val content = StringBuilder()
+    private val reasoning = StringBuilder()
+    private val calls = sortedMapOf<Int, JSONObject>()
+    private var finishReason: String? = null
+    private var usage: JSONObject? = null
+
+    /** Feeds one SSE line; returns false once the stream has ended. */
+    fun line(raw: String): Boolean {
+        val line = raw.trim()
+        if (!line.startsWith("data:")) return true
+        val data = line.removePrefix("data:").trim()
+        if (data == "[DONE]") return false
+        chunk(JSONObject(data))
+        return true
+    }
+
+    fun chunk(chunk: JSONObject) {
+        chunk.optString("id").takeIf(String::isNotBlank)?.let { id = it }
+        chunk.optString("model").takeIf(String::isNotBlank)?.let { model = it }
+        if (chunk.has("created")) created = chunk.optLong("created", created)
+        chunk.optJSONObject("prompt_progress")?.let { progress ->
+            // "processed" already counts tokens reused from the cache.
+            onProgress(progress.optInt("processed"), progress.optInt("total"))
+        }
+        chunk.optJSONObject("usage")?.let { usage = it }
+        val choice = chunk.optJSONArray("choices")?.optJSONObject(0) ?: return
+        choice.optString("finish_reason").takeIf { it.isNotBlank() && !choice.isNull("finish_reason") }?.let { finishReason = it }
+        val delta = choice.optJSONObject("delta") ?: return
+        if (!delta.isNull("content")) content.append(delta.optString("content"))
+        if (!delta.isNull("reasoning_content")) reasoning.append(delta.optString("reasoning_content"))
+        val toolCalls = delta.optJSONArray("tool_calls") ?: return
+        for (i in 0 until toolCalls.length()) {
+            val part = toolCalls.optJSONObject(i) ?: continue
+            val call = calls.getOrPut(part.optInt("index", i)) {
+                JSONObject().put("type", "function").put("function", JSONObject().put("name", "").put("arguments", ""))
+            }
+            part.optString("id").takeIf(String::isNotBlank)?.let { call.put("id", it) }
+            part.optJSONObject("function")?.let { function ->
+                val target = call.getJSONObject("function")
+                function.optString("name").takeIf(String::isNotBlank)?.let { target.put("name", target.getString("name") + it) }
+                if (!function.isNull("arguments")) target.put("arguments", target.getString("arguments") + function.optString("arguments"))
+            }
+        }
+    }
+
+    fun completion(): JSONObject {
+        val message = JSONObject().put("role", "assistant")
+            .put("content", if (content.isEmpty() && calls.isNotEmpty()) JSONObject.NULL else content.toString())
+        if (reasoning.isNotEmpty()) message.put("reasoning_content", reasoning.toString())
+        if (calls.isNotEmpty()) message.put("tool_calls", JSONArray(calls.values.toList()))
+        return JSONObject()
+            .put("id", id)
+            .put("object", "chat.completion")
+            .put("created", created)
+            .put("model", model)
+            .put(
+                "choices",
+                JSONArray().put(
+                    JSONObject().put("index", 0).put("message", message)
+                        .put("finish_reason", finishReason ?: if (calls.isNotEmpty()) "tool_calls" else "stop"),
+                ),
+            )
+            .apply { usage?.let { put("usage", it) } }
+    }
+}

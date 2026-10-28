@@ -24,6 +24,9 @@ data class LocalModel(
 
 data class LocalModelStatus(val model: LocalModel, val downloaded: Boolean)
 
+/** How far the model has read the current request (its prompt) before it starts replying. */
+data class LocalModelProgress(val processed: Int, val total: Int)
+
 /**
  * Runs llama.cpp's llama-server, packaged as libllamaserver.so, directly on Android (not inside
  * PRoot) on 127.0.0.1, behind [LocalModelGateway]. Agents in the Linux runtime share the phone's
@@ -33,6 +36,13 @@ class LocalModelServer(context: Context) {
     private val app = context.applicationContext
     private val modelsDir = File(app.filesDir, "models").apply { mkdirs() }
     private val logFile = File(app.cacheDir, "llama-server.log")
+    private val warmupFile = File(modelsDir, "agent-warmup.json")
+    private val _progress = kotlinx.coroutines.flow.MutableStateFlow<LocalModelProgress?>(null)
+    val progress: kotlinx.coroutines.flow.StateFlow<LocalModelProgress?> = _progress
+
+    fun resetProgress() {
+        _progress.value = null
+    }
 
     fun file(model: LocalModel) = File(modelsDir, "${model.id}.gguf")
 
@@ -123,7 +133,12 @@ class LocalModelServer(context: Context) {
         stop()
         val libraryDir = app.applicationInfo.nativeLibraryDir
         val started = ProcessBuilder(
-            serverCommand(File(libraryDir, "libllamaserver.so").absolutePath, file(model).absolutePath, model.id),
+            serverCommand(
+                File(libraryDir, "libllamaserver.so").absolutePath,
+                file(model).absolutePath,
+                model.id,
+                contextTokens(deviceRamGb()),
+            ),
         )
             .redirectErrorStream(true)
             .redirectOutput(logFile)
@@ -131,14 +146,21 @@ class LocalModelServer(context: Context) {
             .start()
         process = started
         runningModelId = model.id
-        gateway = LocalModelGateway(PORT, "http://$HOST:$SERVER_PORT").start()
+        val startedGateway = LocalModelGateway(PORT, "http://$HOST:$SERVER_PORT", warmupFile) { processed, total ->
+            _progress.value = LocalModelProgress(processed, total)
+        }.start()
+        gateway = startedGateway
         val deadline = System.currentTimeMillis() + START_TIMEOUT_MS
         while (System.currentTimeMillis() < deadline) {
             if (!started.isAlive) {
                 runningModelId = null
                 error("The on-device model stopped while loading: ${logTail()}")
             }
-            if (isHealthy()) return@withContext
+            if (isHealthy()) {
+                // Read the agent's saved instructions now, so the first request finds them cached.
+                Thread({ startedGateway.warmUp() }, "mh-local-model-warmup").apply { isDaemon = true; start() }
+                return@withContext
+            }
             delay(500)
         }
         stop()
@@ -188,20 +210,23 @@ class LocalModelServer(context: Context) {
         /** llama-server itself, reached only through the gateway. */
         const val SERVER_PORT = 8182
         const val BASE_URL = "http://$HOST:$PORT/v1"
-        /** Coding agents send long system prompts and file contents; smaller contexts overflow. */
-        const val CONTEXT_TOKENS = 16_384
+        /**
+         * Coding agents send about 8k tokens of instructions before any files, so less overflows
+         * quickly. Phones with room for it get double, which lasts longer before the agent compacts.
+         */
+        internal fun contextTokens(ramGb: Int): Int = if (ramGb >= 10) 32_768 else 16_384
         private const val START_TIMEOUT_MS = 180_000L
         private const val DOWNLOAD_ATTEMPTS = 5
 
         /** --jinja applies the model's own chat template, which is what makes tool calls work. */
-        internal fun serverCommand(executable: String, modelPath: String, alias: String): List<String> = listOf(
+        internal fun serverCommand(executable: String, modelPath: String, alias: String, contextTokens: Int): List<String> = listOf(
             executable,
             "-m", modelPath,
             "--alias", alias,
             "--host", HOST,
             "--port", SERVER_PORT.toString(),
             "--jinja",
-            "-c", CONTEXT_TOKENS.toString(),
+            "-c", contextTokens.toString(),
             "--no-webui",
         )
 

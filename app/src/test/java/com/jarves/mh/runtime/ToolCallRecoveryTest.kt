@@ -94,4 +94,30 @@ class ToolCallRecoveryTest {
         assertEquals("tool_calls", bodies[2].getJSONArray("choices").getJSONObject(0).getString("finish_reason"))
         assertEquals(5, bodies[3].getJSONObject("usage").getInt("total_tokens"))
     }
+
+    @Test
+    fun assemblesStreamedRepliesAndReportsPromptProgress() {
+        val progress = mutableListOf<Pair<Int, Int>>()
+        val assembler = ChatStreamAssembler { processed, total -> progress += processed to total }
+        val lines = listOf(
+            """data: {"id":"c1","model":"x","created":5,"choices":[],"prompt_progress":{"total":8000,"cache":6000,"processed":6000,"time_ms":1}}""",
+            """data: {"id":"c1","model":"x","created":5,"choices":[],"prompt_progress":{"total":8000,"cache":6000,"processed":8000,"time_ms":900}}""",
+            """data: {"id":"c1","choices":[{"index":0,"delta":{"role":"assistant","content":null},"finish_reason":null}]}""",
+            """data: {"id":"c1","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"t1","type":"function","function":{"name":"bash","arguments":"{\"comm"}}]},"finish_reason":null}]}""",
+            """data: {"id":"c1","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"and\":\"ls\"}"}}]},"finish_reason":null}]}""",
+            """data: {"id":"c1","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}""",
+            """data: {"id":"c1","choices":[],"usage":{"total_tokens":8010}}""",
+            "data: [DONE]",
+        )
+        val stillOpen = lines.map(assembler::line)
+        assertEquals(false, stillOpen.last())
+        assertEquals(listOf(6000 to 8000, 8000 to 8000), progress)
+        val completion = assembler.completion()
+        val message = completion.getJSONArray("choices").getJSONObject(0).getJSONObject("message")
+        val call = message.getJSONArray("tool_calls").getJSONObject(0)
+        assertEquals("t1", call.getString("id"))
+        assertEquals("ls", JSONObject(call.getJSONObject("function").getString("arguments")).getString("command"))
+        assertTrue(message.isNull("content"))
+        assertEquals(8010, completion.getJSONObject("usage").getInt("total_tokens"))
+    }
 }

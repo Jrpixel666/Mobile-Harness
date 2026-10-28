@@ -13,12 +13,19 @@ import org.junit.Test
 class LocalModelServerTest {
     @Test
     fun serverListensOnlyOnThePhoneWithToolCalls() {
-        val command = LocalModelServer.serverCommand("/lib/libllamaserver.so", "/models/a.gguf", "a")
+        val command = LocalModelServer.serverCommand("/lib/libllamaserver.so", "/models/a.gguf", "a", 16_384)
         assertEquals("/lib/libllamaserver.so", command.first())
         assertEquals("127.0.0.1", command[command.indexOf("--host") + 1])
         assertEquals(LocalModelServer.SERVER_PORT.toString(), command[command.indexOf("--port") + 1])
         assertTrue("--jinja" in command)
         assertEquals("/models/a.gguf", command[command.indexOf("-m") + 1])
+        assertEquals("16384", command[command.indexOf("-c") + 1])
+    }
+
+    @Test
+    fun biggerPhonesGetALongerContext() {
+        assertEquals(16_384, LocalModelServer.contextTokens(8))
+        assertEquals(32_768, LocalModelServer.contextTokens(12))
     }
 
     @Test

@@ -13,5 +13,9 @@
     <string name="local_none_downloaded">Download a model below first.</string>
     <string name="local_starting">Loading the on-device model</string>
     <string name="local_loaded">On-device model ready</string>
+    <string name="local_reading">On-device model reading</string>
+    <string name="local_reading_detail">%1$,d of %2$,d tokens of instructions and files. The first request in a session takes longest.</string>
+    <string name="local_writing">On-device model writing</string>
+    <string name="local_writing_detail">Read %1$,d tokens; writing the reply.</string>
     <string name="local_loaded_detail">%1$s loaded in %2$d s. The first reply reads the agent\'s instructions and can take a few minutes.</string>
 </resources>

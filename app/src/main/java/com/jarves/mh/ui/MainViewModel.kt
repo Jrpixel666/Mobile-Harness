@@ -473,6 +473,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun activeRuntime(): com.jarves.mh.runtime.RuntimeBridge = agentRegistry.require(_state.value.agentKind).runtime
     private val providerApi = ProviderApiClient(application)
     private val localModelServer = com.jarves.mh.runtime.LocalModelServer(application)
+    private var localProgressJob: kotlinx.coroutines.Job? = null
     private fun appUpdater(): AppUpdater = AppUpdater(
         getApplication(),
         if (BuildConfig.DEBUG) preferences.debugUpdateManifestUrl else "",
@@ -4036,6 +4037,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     /** Loads the on-device model before a task; reports failures in the chat like other runtime errors. */
     private suspend fun startLocalModelIfNeeded(provider: ProviderProfile): Boolean {
         if (provider.kind != ProviderKind.LOCAL) return true
+        localModelServer.resetProgress()
         val loading = ActivityItem(str(R.string.local_starting), provider.model, false)
         val startedAt = System.currentTimeMillis()
         _state.update { it.copy(liveProcess = it.liveProcess + loading) }
@@ -4044,6 +4046,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val seconds = ((System.currentTimeMillis() - startedAt + 999) / 1000).toInt()
                 val loaded = ActivityItem(str(R.string.local_loaded), str(R.string.local_loaded_detail, provider.model, seconds))
                 _state.update { state -> state.copy(liveProcess = state.liveProcess.map { if (it === loading) loaded else it }) }
+                followLocalModelProgress()
                 true
             },
             onFailure = { error ->
@@ -4067,6 +4070,35 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 false
             },
         )
+    }
+
+    /** Shows how far the on-device model has read each request, which can take minutes. */
+    private fun followLocalModelProgress() {
+        localProgressJob?.cancel()
+        localProgressJob = viewModelScope.launch {
+            var shown: ActivityItem? = null
+            localModelServer.progress.collect { progress ->
+                if (!_state.value.isRunning) {
+                    localProgressJob?.cancel()
+                    return@collect
+                }
+                if (progress == null || progress.total <= 0) return@collect
+                val reading = progress.processed < progress.total
+                val item = if (reading) {
+                    ActivityItem(str(R.string.local_reading), str(R.string.local_reading_detail, progress.processed, progress.total), false)
+                } else {
+                    ActivityItem(str(R.string.local_writing), str(R.string.local_writing_detail, progress.total), false)
+                }
+                _state.update { state ->
+                    val previous = shown
+                    val replaced = previous != null && state.liveProcess.any { it === previous }
+                    state.copy(
+                        liveProcess = if (replaced) state.liveProcess.map { if (it === previous) item else it } else state.liveProcess + item,
+                    )
+                }
+                shown = item
+            }
+        }
     }
 
     fun dismissGitHubProjectMessage() {
