@@ -4036,9 +4036,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     /** Loads the on-device model before a task; reports failures in the chat like other runtime errors. */
     private suspend fun startLocalModelIfNeeded(provider: ProviderProfile): Boolean {
         if (provider.kind != ProviderKind.LOCAL) return true
-        _state.update { it.copy(liveProcess = it.liveProcess + ActivityItem(str(R.string.local_starting), provider.model, false)) }
+        val loading = ActivityItem(str(R.string.local_starting), provider.model, false)
+        val startedAt = System.currentTimeMillis()
+        _state.update { it.copy(liveProcess = it.liveProcess + loading) }
         return runCatching { localModelServer.ensureRunning(provider.model) }.fold(
-            onSuccess = { true },
+            onSuccess = {
+                val seconds = ((System.currentTimeMillis() - startedAt + 999) / 1000).toInt()
+                val loaded = ActivityItem(str(R.string.local_loaded), str(R.string.local_loaded_detail, provider.model, seconds))
+                _state.update { state -> state.copy(liveProcess = state.liveProcess.map { if (it === loading) loaded else it }) }
+                true
+            },
             onFailure = { error ->
                 val reason = error.message ?: str(R.string.vm_unknown_error)
                 val finishedAt = System.currentTimeMillis()

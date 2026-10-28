@@ -12,4 +12,6 @@
     <string name="local_downloaded">%1$s is ready. Select it, then save.</string>
     <string name="local_none_downloaded">Download a model below first.</string>
     <string name="local_starting">Loading the on-device model</string>
+    <string name="local_loaded">On-device model ready</string>
+    <string name="local_loaded_detail">%1$s loaded in %2$d s. The first reply reads the agent\'s instructions and can take a few minutes.</string>
 </resources>
