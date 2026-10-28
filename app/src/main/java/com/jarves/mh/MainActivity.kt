@@ -7,7 +7,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.LocalActivityResultRegistryOwner
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.activity.viewModels
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -18,12 +17,24 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.LayoutDirection.Ltr
 import androidx.compose.ui.unit.LayoutDirection.Rtl
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.jarves.mh.ui.AppStrings
 import com.jarves.mh.ui.LocaleHelper
 import com.jarves.mh.ui.MainViewModel
 import com.jarves.mh.ui.PocketDevApp
 import com.jarves.mh.ui.theme.PocketTheme
+
+/**
+ * Holds the main view model for the whole process instead of one activity. Agent sessions, the
+ * on-device model and chat state then keep going when the user closes the app from recents,
+ * as long as a foreground service keeps the process alive, and reappear when it is reopened.
+ */
+private object ProcessViewModelStore : ViewModelStoreOwner {
+    override val viewModelStore = ViewModelStore()
+}
 
 class MainActivity : ComponentActivity() {
     private var appliedLanguageCode: String? = null
@@ -34,7 +45,12 @@ class MainActivity : ComponentActivity() {
         appliedLanguageCode = AppStrings.languageCode(newBase)
         super.attachBaseContext(AppStrings.context(newBase))
     }
-    private val mainViewModel: MainViewModel by viewModels()
+    private val mainViewModel: MainViewModel by lazy {
+        ViewModelProvider(
+            ProcessViewModelStore,
+            ViewModelProvider.AndroidViewModelFactory.getInstance(application),
+        )[MainViewModel::class.java]
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
