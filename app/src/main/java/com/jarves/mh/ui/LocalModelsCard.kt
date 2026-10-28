@@ -2,6 +2,7 @@ package com.jarves.mh.ui
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -36,6 +37,7 @@ fun LocalModelsCard(
     onDelete: (String) -> Unit,
     onRefresh: () -> Unit,
     onToggleHuggingFace: () -> Unit,
+    onSetThreads: (Int) -> Unit,
     huggingFaceActions: HuggingFaceActions,
     supportedArchitectures: Set<String> = emptySet(),
 ) {
@@ -98,6 +100,24 @@ fun LocalModelsCard(
                         progress = { state.localModelProgress },
                         modifier = Modifier.fillMaxWidth(),
                         color = PocketOrange,
+                    )
+                }
+            }
+            Text(stringResource(R.string.local_cores_title), fontWeight = FontWeight.SemiBold)
+            Text(
+                stringResource(R.string.local_cores_desc, state.localAutoThreads, state.localTotalCores),
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(
+                Modifier.horizontalScroll(androidx.compose.foundation.rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                (listOf(0) + (1..maxOf(1, state.localTotalCores))).forEach { count ->
+                    androidx.compose.material3.FilterChip(
+                        selected = state.localThreads == count,
+                        onClick = { onSetThreads(count) },
+                        label = { Text(if (count == 0) stringResource(R.string.local_cores_auto, state.localAutoThreads) else count.toString()) },
                     )
                 }
             }

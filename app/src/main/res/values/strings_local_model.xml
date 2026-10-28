@@ -25,6 +25,9 @@
     <string name="local_service_stop">Stop model</string>
     <string name="local_test_ok">On-device model loaded. It reads the agent\'s saved instructions in the background; tasks wait for that to finish.</string>
     <string name="local_ready_idle">Ready on this phone. The model loads when a task starts.</string>
+    <string name="local_cores_title">CPU cores</string>
+    <string name="local_cores_desc">Auto uses the fast cores (%1$d of %2$d). Try other counts and compare the reading speed; a change applies the next time the model loads.</string>
+    <string name="local_cores_auto">Auto (%1$d)</string>
     <string name="hf_open">Find more models on Hugging Face</string>
     <string name="hf_close">Hide Hugging Face search</string>
     <string name="hf_more_results">Showing the top %1$d of %2$d. Search for something more specific to see others.</string>

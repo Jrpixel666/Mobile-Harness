@@ -205,6 +205,17 @@ class LocalModelServer(
         if (model.custom) removeCustom(model.id)
     }
 
+    private val settings = app.getSharedPreferences("local_model", Context.MODE_PRIVATE)
+
+    /** Cores to run on: 0 picks the fast cores automatically; a change applies on the next load. */
+    var threadsSetting: Int
+        get() = settings.getInt("threads", 0)
+        set(value) { settings.edit().putInt("threads", value.coerceAtLeast(0)).apply() }
+
+    fun totalCores(): Int = Runtime.getRuntime().availableProcessors()
+
+    fun autoThreads(): Int = performanceCores(coreMaxFrequencies())
+
     @Volatile private var process: Process? = null
     /** Threads the running server uses; shown to the user when it is ready. */
     @Volatile var threads: Int = 0
@@ -217,11 +228,12 @@ class LocalModelServer(
         val model = find(modelId)
             ?: error("Pick an on-device model in Agent → AI provider.")
         check(isDownloaded(model)) { "${model.title} is not downloaded yet. Download it in Agent → AI provider." }
-        if (runningModelId == model.id && process?.isAlive == true && isHealthy()) return@withContext
+        val wanted = threadsSetting.takeIf { it > 0 }?.coerceAtMost(totalCores()) ?: performanceCores(coreMaxFrequencies())
+        if (runningModelId == model.id && threads == wanted && process?.isAlive == true && isHealthy()) return@withContext
         stop()
         killOrphanedServers()
         val libraryDir = app.applicationInfo.nativeLibraryDir
-        val threads = performanceCores(coreMaxFrequencies())
+        val threads = wanted
         this@LocalModelServer.threads = threads
         val started = ProcessBuilder(
             serverCommand(

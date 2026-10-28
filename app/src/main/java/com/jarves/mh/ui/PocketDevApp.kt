@@ -2548,6 +2548,7 @@ private fun RootScreenHost(
                     onDeleteLocalModel = viewModel::deleteLocalModel,
                     onRefreshLocalModels = viewModel::refreshLocalModels,
                     onToggleHuggingFace = viewModel::toggleHuggingFaceBrowser,
+                    onSetLocalThreads = viewModel::setLocalThreads,
                     huggingFaceActions = remember(viewModel) {
                         HuggingFaceActions(
                             section = viewModel::searchHuggingFaceSectionInline,

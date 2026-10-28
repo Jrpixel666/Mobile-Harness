@@ -196,6 +196,7 @@ fun AgentScreen(
     onDeleteLocalModel: (String) -> Unit = {},
     onRefreshLocalModels: () -> Unit = {},
     onToggleHuggingFace: () -> Unit = {},
+    onSetLocalThreads: (Int) -> Unit = {},
     huggingFaceActions: HuggingFaceActions = NoHuggingFaceActions,
     supportedLlamaArchitectures: Set<String> = emptySet(),
 ) {
@@ -1152,6 +1153,7 @@ fun AgentScreen(
                             onDelete = onDeleteLocalModel,
                             onRefresh = onRefreshLocalModels,
                             onToggleHuggingFace = onToggleHuggingFace,
+                            onSetThreads = onSetLocalThreads,
                             huggingFaceActions = huggingFaceActions,
                             supportedArchitectures = supportedLlamaArchitectures,
                         )

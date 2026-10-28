@@ -349,6 +349,10 @@ data class AppUiState(
     val localModelProgress: Float = 0f,
     val localModelMessage: String? = null,
     val deviceRamGb: Int = 0,
+    /** On-device model cores: 0 = automatic. */
+    val localThreads: Int = 0,
+    val localAutoThreads: Int = 0,
+    val localTotalCores: Int = 0,
     /** Hugging Face model browser shown under the on-device model list. */
     val huggingFace: HuggingFaceBrowserState = HuggingFaceBrowserState(),
     val activeProject: Project? = null,
@@ -4033,7 +4037,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch(Dispatchers.IO) {
             val statuses = localModelServer.statuses()
             val ram = localModelServer.deviceRamGb()
-            _state.update { it.copy(localModels = statuses, deviceRamGb = ram) }
+            _state.update {
+                it.copy(
+                    localModels = statuses,
+                    deviceRamGb = ram,
+                    localThreads = localModelServer.threadsSetting,
+                    localAutoThreads = localModelServer.autoThreads(),
+                    localTotalCores = localModelServer.totalCores(),
+                )
+            }
         }
     }
 
@@ -4220,6 +4232,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             refreshLocalModels()
             withContext(Dispatchers.Main) { downloadLocalModel(model.id) }
         }
+    }
+
+    fun setLocalThreads(threads: Int) {
+        localModelServer.threadsSetting = threads
+        _state.update { it.copy(localThreads = threads) }
     }
 
     fun deleteLocalModel(modelId: String) {
