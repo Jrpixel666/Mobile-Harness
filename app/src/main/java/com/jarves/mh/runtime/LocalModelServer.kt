@@ -20,6 +20,8 @@ data class LocalModel(
     val sizeBytes: Long,
     /** Phones with less memory than this are likely to be killed while it runs. */
     val minRamGb: Int,
+    /** Found through Hugging Face search rather than the built-in list; removed again on delete. */
+    val custom: Boolean = false,
 )
 
 data class LocalModelStatus(val model: LocalModel, val downloaded: Boolean)
@@ -56,7 +58,57 @@ class LocalModelServer(context: Context) {
 
     fun isDownloaded(model: LocalModel) = file(model).let { it.isFile && it.length() == model.sizeBytes }
 
-    fun statuses(): List<LocalModelStatus> = CATALOG.map { LocalModelStatus(it, isDownloaded(it)) }
+    private val customFile = File(modelsDir, "custom-models.json")
+
+    /** Built-in models, then ones added from Hugging Face search. */
+    fun models(): List<LocalModel> = CATALOG + customModels()
+
+    fun find(id: String): LocalModel? = models().firstOrNull { it.id == id }
+
+    private fun customModels(): List<LocalModel> = runCatching {
+        val list = org.json.JSONArray(customFile.readText())
+        (0 until list.length()).map { index ->
+            val item = list.getJSONObject(index)
+            LocalModel(
+                id = item.getString("id"),
+                title = item.getString("title"),
+                url = item.getString("url"),
+                sha256 = item.optString("sha256"),
+                sizeBytes = item.getLong("size"),
+                minRamGb = item.optInt("minRamGb", 4),
+                custom = true,
+            )
+        }
+    }.getOrDefault(emptyList())
+
+    @Synchronized
+    fun addCustom(model: LocalModel) {
+        val others = customModels().filterNot { it.id == model.id }
+        val list = org.json.JSONArray()
+        (others + model).forEach {
+            list.put(
+                org.json.JSONObject()
+                    .put("id", it.id).put("title", it.title).put("url", it.url)
+                    .put("sha256", it.sha256).put("size", it.sizeBytes).put("minRamGb", it.minRamGb),
+            )
+        }
+        customFile.writeText(list.toString())
+    }
+
+    @Synchronized
+    private fun removeCustom(id: String) {
+        val list = org.json.JSONArray()
+        customModels().filterNot { it.id == id }.forEach {
+            list.put(
+                org.json.JSONObject()
+                    .put("id", it.id).put("title", it.title).put("url", it.url)
+                    .put("sha256", it.sha256).put("size", it.sizeBytes).put("minRamGb", it.minRamGb),
+            )
+        }
+        customFile.writeText(list.toString())
+    }
+
+    fun statuses(): List<LocalModelStatus> = models().map { LocalModelStatus(it, isDownloaded(it)) }
 
     fun deviceRamGb(): Int {
         val info = ActivityManager.MemoryInfo()
@@ -78,7 +130,7 @@ class LocalModelServer(context: Context) {
             }
         }
         check(partial.length() == model.sizeBytes) { "The download of ${model.title} is incomplete." }
-        if (sha256(partial) != model.sha256) {
+        if (model.sha256.isNotBlank() && sha256(partial) != model.sha256) {
             partial.delete()
             error("${model.title} failed its checksum. Download it again.")
         }
@@ -126,6 +178,7 @@ class LocalModelServer(context: Context) {
         if (runningModelId == model.id) stop()
         file(model).delete()
         File(modelsDir, "${model.id}.gguf.part").delete()
+        if (model.custom) removeCustom(model.id)
     }
 
     @Volatile private var process: Process? = null
@@ -137,7 +190,7 @@ class LocalModelServer(context: Context) {
 
     /** Starts the server for [modelId] unless it already serves it; waits until it answers. */
     suspend fun ensureRunning(modelId: String): Unit = withContext(Dispatchers.IO) {
-        val model = CATALOG.firstOrNull { it.id == modelId }
+        val model = find(modelId)
             ?: error("Pick an on-device model in Agent → AI provider.")
         check(isDownloaded(model)) { "${model.title} is not downloaded yet. Download it in Agent → AI provider." }
         if (runningModelId == model.id && process?.isAlive == true && isHealthy()) return@withContext

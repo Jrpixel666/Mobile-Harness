@@ -2547,6 +2547,9 @@ private fun RootScreenHost(
                     onDownloadLocalModel = viewModel::downloadLocalModel,
                     onDeleteLocalModel = viewModel::deleteLocalModel,
                     onRefreshLocalModels = viewModel::refreshLocalModels,
+                    onSearchHuggingFace = viewModel::searchHuggingFace,
+                    onHuggingFaceFiles = viewModel::huggingFaceFiles,
+                    onDownloadHuggingFace = viewModel::downloadHuggingFaceModel,
                 )
                 RootScreen.SETTINGS -> SettingsScreen(
                     state = state,

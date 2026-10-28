@@ -17,6 +17,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -35,8 +39,22 @@ fun LocalModelsCard(
     onDownload: (String) -> Unit,
     onDelete: (String) -> Unit,
     onRefresh: () -> Unit,
+    onSearchHuggingFace: suspend (String) -> List<com.jarves.mh.network.HfRepo>,
+    onHuggingFaceFiles: suspend (String) -> List<com.jarves.mh.network.HfModelFile>,
+    onDownloadHuggingFace: (com.jarves.mh.network.HfModelFile) -> Unit,
 ) {
     LaunchedEffect(Unit) { onRefresh() }
+    var showSearch by rememberSaveable { mutableStateOf(false) }
+    if (showSearch) {
+        HuggingFaceSearchSheet(
+            ramGb = state.deviceRamGb,
+            downloading = state.localModelDownloading != null,
+            onSearch = onSearchHuggingFace,
+            onFiles = onHuggingFaceFiles,
+            onDownload = onDownloadHuggingFace,
+            onDismiss = { showSearch = false },
+        )
+    }
     Surface(
         color = MaterialTheme.colorScheme.surface,
         shape = RoundedCornerShape(20.dp),
@@ -68,6 +86,7 @@ fun LocalModelsCard(
                     )
                     Column(Modifier.weight(1f)) {
                         Text(model.title, fontWeight = FontWeight.Medium)
+                        if (model.custom) Text(stringResource(R.string.local_from_hf), fontSize = 11.sp, color = PocketOrange)
                         Text(
                             stringResource(
                                 if (tooBig) R.string.local_size_warning else R.string.local_size,
@@ -96,6 +115,9 @@ fun LocalModelsCard(
                         color = PocketOrange,
                     )
                 }
+            }
+            OutlinedButton(onClick = { showSearch = true }, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.hf_open))
             }
             state.localModelMessage?.let {
                 Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)

@@ -4017,7 +4017,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun downloadLocalModel(modelId: String) {
-        val model = com.jarves.mh.runtime.LocalModelServer.CATALOG.firstOrNull { it.id == modelId } ?: return
+        val model = localModelServer.find(modelId) ?: return
         if (_state.value.localModelDownloading != null) return
         _state.update { it.copy(localModelDownloading = model.id, localModelProgress = 0f, localModelMessage = null) }
         viewModelScope.launch {
@@ -4039,8 +4039,32 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    suspend fun searchHuggingFace(query: String): List<com.jarves.mh.network.HfRepo> =
+        withContext(Dispatchers.IO) { com.jarves.mh.network.HuggingFaceModels.search(query) }
+
+    suspend fun huggingFaceFiles(repo: String): List<com.jarves.mh.network.HfModelFile> =
+        withContext(Dispatchers.IO) { com.jarves.mh.network.HuggingFaceModels.files(repo) }
+
+    /** Adds a file found on Hugging Face to the phone's models and downloads it. */
+    fun downloadHuggingFaceModel(file: com.jarves.mh.network.HfModelFile) {
+        val model = com.jarves.mh.runtime.LocalModel(
+            id = com.jarves.mh.network.HuggingFaceModels.localId(file),
+            title = "${file.repo.substringAfter('/').removeSuffix("-GGUF").removeSuffix("-gguf")} ${file.quant}",
+            url = file.url,
+            sha256 = file.sha256,
+            sizeBytes = file.sizeBytes,
+            minRamGb = com.jarves.mh.network.HuggingFaceModels.minRamGb(file.sizeBytes),
+            custom = true,
+        )
+        viewModelScope.launch(Dispatchers.IO) {
+            localModelServer.addCustom(model)
+            refreshLocalModels()
+            withContext(Dispatchers.Main) { downloadLocalModel(model.id) }
+        }
+    }
+
     fun deleteLocalModel(modelId: String) {
-        val model = com.jarves.mh.runtime.LocalModelServer.CATALOG.firstOrNull { it.id == modelId } ?: return
+        val model = localModelServer.find(modelId) ?: return
         viewModelScope.launch(Dispatchers.IO) {
             localModelServer.delete(model)
             refreshLocalModels()

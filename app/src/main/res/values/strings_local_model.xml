@@ -25,4 +25,23 @@
     <string name="local_service_stop">Stop model</string>
     <string name="local_test_ok">On-device model loaded. It reads the agent\'s saved instructions in the background; tasks wait for that to finish.</string>
     <string name="local_ready_idle">Ready on this phone. The model loads when a task starts.</string>
+    <string name="hf_open">Search Hugging Face</string>
+    <string name="hf_title">Hugging Face models</string>
+    <string name="hf_back">Back to results</string>
+    <string name="hf_device">This phone has about %1$d GB of RAM. Green fits well, orange is tight, red is too big.</string>
+    <string name="hf_search_hint">Search GGUF models</string>
+    <string name="hf_search">Search</string>
+    <string name="hf_only_fits">Only models that fit this phone</string>
+    <string name="hf_only_tools">Only models that can use tools (needed to edit files)</string>
+    <string name="hf_no_results">No models found. Try other words, or turn off a filter.</string>
+    <string name="hf_no_files">No single-file GGUF models in this repository.</string>
+    <string name="hf_params">%1$.1fB params</string>
+    <string name="hf_tools">Tools</string>
+    <string name="hf_downloads">%1$,d downloads</string>
+    <string name="hf_fit_good">Fits</string>
+    <string name="hf_fit_tight">Tight</string>
+    <string name="hf_fit_too_big">Too big</string>
+    <string name="hf_fast_arm">Fastest on phones</string>
+    <string name="hf_balanced">Balanced</string>
+    <string name="local_from_hf">From Hugging Face</string>
 </resources>

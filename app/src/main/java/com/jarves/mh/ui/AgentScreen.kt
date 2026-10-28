@@ -195,6 +195,9 @@ fun AgentScreen(
     onDownloadLocalModel: (String) -> Unit = {},
     onDeleteLocalModel: (String) -> Unit = {},
     onRefreshLocalModels: () -> Unit = {},
+    onSearchHuggingFace: suspend (String) -> List<com.jarves.mh.network.HfRepo> = { emptyList() },
+    onHuggingFaceFiles: suspend (String) -> List<com.jarves.mh.network.HfModelFile> = { emptyList() },
+    onDownloadHuggingFace: (com.jarves.mh.network.HfModelFile) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -1148,6 +1151,9 @@ fun AgentScreen(
                             onDownload = onDownloadLocalModel,
                             onDelete = onDeleteLocalModel,
                             onRefresh = onRefreshLocalModels,
+                            onSearchHuggingFace = onSearchHuggingFace,
+                            onHuggingFaceFiles = onHuggingFaceFiles,
+                            onDownloadHuggingFace = onDownloadHuggingFace,
                         )
                     }
                 }
