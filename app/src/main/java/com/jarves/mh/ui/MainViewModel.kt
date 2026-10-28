@@ -4077,6 +4077,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         localProgressJob?.cancel()
         localProgressJob = viewModelScope.launch {
             var shown: ActivityItem? = null
+            // Rate since this request's first progress report, so the user sees how fast the phone reads.
+            var baseline: Pair<Long, Int>? = null
+            var baselineTotal = 0
             localModelServer.progress.collect { progress ->
                 if (!_state.value.isRunning) {
                     localProgressJob?.cancel()
@@ -4084,8 +4087,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 if (progress == null || progress.total <= 0) return@collect
                 val reading = progress.processed < progress.total
+                val now = android.os.SystemClock.elapsedRealtime()
+                if (baseline == null || progress.total != baselineTotal || progress.processed < baseline!!.second) {
+                    baseline = now to progress.processed
+                    baselineTotal = progress.total
+                }
+                val (since, from) = baseline!!
+                val rate = if (now > since) ((progress.processed - from) * 1000L / (now - since)).toInt() else 0
                 val item = if (reading) {
-                    ActivityItem(str(R.string.local_reading), str(R.string.local_reading_detail, progress.processed, progress.total), false)
+                    val detail = str(R.string.local_reading_detail, progress.processed, progress.total)
+                    ActivityItem(
+                        str(R.string.local_reading),
+                        if (rate > 0) "$detail ${str(R.string.local_reading_rate, rate, localModelServer.threads)}" else detail,
+                        false,
+                    )
                 } else {
                     ActivityItem(str(R.string.local_writing), str(R.string.local_writing_detail, progress.total), false)
                 }

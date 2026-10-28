@@ -121,6 +121,9 @@ class LocalModelServer(context: Context) {
     }
 
     @Volatile private var process: Process? = null
+    /** Threads the running server uses; shown to the user when it is ready. */
+    @Volatile var threads: Int = 0
+        private set
     @Volatile private var gateway: LocalModelGateway? = null
     @Volatile private var runningModelId: String? = null
 
@@ -132,12 +135,15 @@ class LocalModelServer(context: Context) {
         if (runningModelId == model.id && process?.isAlive == true && isHealthy()) return@withContext
         stop()
         val libraryDir = app.applicationInfo.nativeLibraryDir
+        val threads = performanceCores(coreMaxFrequencies())
+        this@LocalModelServer.threads = threads
         val started = ProcessBuilder(
             serverCommand(
                 File(libraryDir, "libllamaserver.so").absolutePath,
                 file(model).absolutePath,
                 model.id,
                 contextTokens(deviceRamGb()),
+                threads,
             ),
         )
             .redirectErrorStream(true)
@@ -186,6 +192,13 @@ class LocalModelServer(context: Context) {
         try { connection.responseCode == 200 } finally { connection.disconnect() }
     }.getOrDefault(false)
 
+    private fun coreMaxFrequencies(): List<Long> =
+        (0 until Runtime.getRuntime().availableProcessors()).mapNotNull { cpu ->
+            runCatching {
+                File("/sys/devices/system/cpu/cpu$cpu/cpufreq/cpuinfo_max_freq").readText().trim().toLong()
+            }.getOrNull()
+        }
+
     private fun logTail(): String = runCatching {
         logFile.readLines().filter(String::isNotBlank).takeLast(3).joinToString(" ").take(400)
     }.getOrDefault("")
@@ -219,7 +232,25 @@ class LocalModelServer(context: Context) {
         private const val DOWNLOAD_ATTEMPTS = 5
 
         /** --jinja applies the model's own chat template, which is what makes tool calls work. */
-        internal fun serverCommand(executable: String, modelPath: String, alias: String, contextTokens: Int): List<String> = listOf(
+        /**
+         * Phone CPUs mix fast and slow cores. llama.cpp starts one thread per core and every step
+         * waits for the slowest, so only the cores within 70% of the fastest clock are used.
+         */
+        internal fun performanceCores(maxFrequencies: List<Long>): Int {
+            val fastest = maxFrequencies.maxOrNull() ?: return FALLBACK_THREADS
+            return maxFrequencies.count { it * 10 >= fastest * 7 }.coerceIn(1, MAX_THREADS)
+        }
+
+        private const val FALLBACK_THREADS = 4
+        private const val MAX_THREADS = 8
+
+        internal fun serverCommand(
+            executable: String,
+            modelPath: String,
+            alias: String,
+            contextTokens: Int,
+            threads: Int,
+        ): List<String> = listOf(
             executable,
             "-m", modelPath,
             "--alias", alias,
@@ -227,6 +258,8 @@ class LocalModelServer(context: Context) {
             "--port", SERVER_PORT.toString(),
             "--jinja",
             "-c", contextTokens.toString(),
+            "-t", threads.toString(),
+            "-tb", threads.toString(),
             "--no-webui",
         )
 
