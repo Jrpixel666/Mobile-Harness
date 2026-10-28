@@ -44,4 +44,16 @@
     <string name="hf_fast_arm">Fastest on phones</string>
     <string name="hf_balanced">Balanced</string>
     <string name="local_from_hf">From Hugging Face</string>
+    <string name="hf_section_coding">Coding</string>
+    <string name="hf_section_uncensored">Uncensored</string>
+    <string name="hf_section_small">Small &amp; fast</string>
+    <string name="hf_section_reasoning">Reasoning</string>
+    <string name="hf_section_general">General chat</string>
+    <string name="hf_gated">Gated</string>
+    <string name="hf_token_title">Add a Hugging Face token (optional)</string>
+    <string name="hf_token_saved">Hugging Face token saved · change</string>
+    <string name="hf_token_desc">Only gated models (such as Llama or Gemma) need one. Accept the model\'s licence on huggingface.co, then create a read token under Settings → Access Tokens. It is stored encrypted on this phone and sent only to huggingface.co.</string>
+    <string name="hf_token_field">Hugging Face token</string>
+    <string name="hf_token_save">Save token</string>
+    <string name="hf_token_remove">Remove token</string>
 </resources>

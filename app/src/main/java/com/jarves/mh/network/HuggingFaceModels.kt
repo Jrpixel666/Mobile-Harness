@@ -15,7 +15,18 @@ data class HfRepo(
     val parameters: Long?,
     /** The chat template mentions tools, so the agent's tool calls can be formatted for it. */
     val supportsTools: Boolean,
+    /** Downloads need the licence accepted on huggingface.co and a token. */
+    val gated: Boolean = false,
 )
+
+/** Ready-made searches; each runs its queries and merges the results. */
+enum class HfSection(val queries: List<String>, val maxParameters: Long? = null) {
+    CODING(listOf("coder instruct", "coder")),
+    UNCENSORED(listOf("abliterated", "uncensored", "heretic")),
+    SMALL(listOf("instruct"), maxParameters = 4_000_000_000L),
+    REASONING(listOf("reasoning", "thinking", "r1 distill")),
+    GENERAL(listOf("instruct", "chat")),
+}
 
 /** One downloadable .gguf file in a repository. */
 data class HfModelFile(
@@ -44,9 +55,11 @@ object HuggingFaceModels {
     /** Old pre-repacked ARM formats; current llama.cpp repacks plain Q4_0 itself and rejects these. */
     private val LEGACY_ARM = Regex("(?i)Q4_0_\\d_\\d")
 
-    fun searchUrl(query: String, limit: Int = 30): String =
+    fun searchUrl(query: String, maxParameters: Long? = null, limit: Int = 40): String =
         "$API?search=${URLEncoder.encode(query.trim(), "UTF-8")}&filter=gguf&sort=downloads&direction=-1&limit=$limit" +
-            "&expand%5B%5D=gguf&expand%5B%5D=downloads&expand%5B%5D=likes"
+            // The API takes whole billions here; "M" values are not filtered correctly.
+            (maxParameters?.let { "&num_parameters=min:0,max:${(it / 1_000_000_000L).coerceAtLeast(1)}B" } ?: "") +
+            "&expand%5B%5D=gguf&expand%5B%5D=downloads&expand%5B%5D=likes&expand%5B%5D=gated"
 
     fun filesUrl(repo: String): String = "$API/$repo/tree/main?recursive=true"
 
@@ -67,6 +80,12 @@ object HuggingFaceModels {
                 likes = item.optLong("likes"),
                 parameters = gguf?.optLong("total")?.takeIf { it > 0 },
                 supportsTools = gguf?.optString("chat_template").orEmpty().contains("tools"),
+                // "gated" is false, or the approval mode ("auto" / "manual").
+                gated = when (val gated = item.opt("gated")) {
+                    is Boolean -> gated
+                    is String -> gated.isNotBlank() && gated != "false"
+                    else -> false
+                },
             )
         }
     }
@@ -108,18 +127,36 @@ object HuggingFaceModels {
         }
     }
 
+    /** Largest model, in parameters, that still rates Tight or better at Q4 on this phone. */
+    fun maxParametersFor(ramGb: Int): Long? {
+        if (ramGb <= 0) return null
+        val bytes = ramGb * 0.8 * GB - OVERHEAD_BYTES
+        return (bytes / Q4_BYTES_PER_PARAMETER).toLong().coerceAtLeast(500_000_000L)
+    }
+
     /** The RAM a file needs to be in the GOOD band, for the model list's "needs N GB" line. */
     fun minRamGb(sizeBytes: Long): Int = kotlin.math.ceil((sizeBytes + OVERHEAD_BYTES) / GB / 0.6).toInt()
 
-    fun search(query: String): List<HfRepo> = parseSearch(get(searchUrl(query)))
+    fun search(query: String, maxParameters: Long? = null, token: String? = null): List<HfRepo> =
+        parseSearch(get(searchUrl(query, maxParameters), token))
 
-    fun files(repo: String): List<HfModelFile> = parseFiles(repo, get(filesUrl(repo)))
+    /** Runs a section's queries and merges them, most downloaded first. */
+    fun search(section: HfSection, phoneMaxParameters: Long?, token: String? = null): List<HfRepo> {
+        val cap = listOfNotNull(section.maxParameters, phoneMaxParameters).minOrNull()
+        return section.queries
+            .flatMap { query -> runCatching { search(query, cap, token) }.getOrDefault(emptyList()) }
+            .distinctBy { it.id }
+            .sortedByDescending { it.downloads }
+    }
 
-    private fun get(url: String): String {
+    fun files(repo: String, token: String? = null): List<HfModelFile> = parseFiles(repo, get(filesUrl(repo), token))
+
+    private fun get(url: String, token: String?): String {
         val connection = (URL(url).openConnection() as HttpURLConnection).apply {
             connectTimeout = 15_000
             readTimeout = 30_000
             setRequestProperty("Accept", "application/json")
+            token?.takeIf(String::isNotBlank)?.let { setRequestProperty("Authorization", "Bearer $it") }
         }
         return try {
             val code = connection.responseCode

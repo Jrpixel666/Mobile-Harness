@@ -64,4 +64,17 @@ class HuggingFaceModelsTest {
         assertTrue(file.url.endsWith("/resolve/main/sub%20dir/Model%20Q4_0.gguf"))
         assertEquals("Q4_0", file.quant)
     }
+
+    @Test
+    fun readsGatedFlagsAndLimitsSearchesToThePhone() {
+        val repos = HuggingFaceModels.parseSearch(
+            """[{"id":"a/open","gated":false},{"id":"b/gated","gated":"manual"},{"id":"c/old"}]""",
+        )
+        assertEquals(listOf(false, true, false), repos.map { it.gated })
+        // 12 GB Pixel: up to about 13.5B parameters at Q4; 4 GB tablet: about 2.8B.
+        assertEquals(13, (HuggingFaceModels.maxParametersFor(12)!! / 1_000_000_000L).toInt())
+        assertEquals(2, (HuggingFaceModels.maxParametersFor(4)!! / 1_000_000_000L).toInt())
+        assertTrue("num_parameters=min:0,max:13B" in HuggingFaceModels.searchUrl("abliterated", HuggingFaceModels.maxParametersFor(12)))
+        assertFalse("num_parameters" in HuggingFaceModels.searchUrl("abliterated"))
+    }
 }

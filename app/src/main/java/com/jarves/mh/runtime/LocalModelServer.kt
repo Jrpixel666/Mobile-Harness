@@ -34,7 +34,11 @@ data class LocalModelProgress(val processed: Int, val total: Int)
  * PRoot) on 127.0.0.1, behind [LocalModelGateway]. Agents in the Linux runtime share the phone's
  * network, so they reach it at [BASE_URL] like any OpenAI-compatible server.
  */
-class LocalModelServer(context: Context) {
+class LocalModelServer(
+    context: Context,
+    /** Optional Hugging Face token, sent only to huggingface.co for gated models. */
+    private val huggingFaceToken: () -> String? = { null },
+) {
     private val app = context.applicationContext
     private val modelsDir = File(app.filesDir, "models").apply { mkdirs() }
     private val logFile = File(app.cacheDir, "llama-server.log")
@@ -144,9 +148,15 @@ class LocalModelServer(context: Context) {
             readTimeout = 30_000
             instanceFollowRedirects = true
             if (start > 0) setRequestProperty("Range", "bytes=$start-")
+            if (URL(model.url).host == "huggingface.co") {
+                huggingFaceToken()?.takeIf(String::isNotBlank)?.let { setRequestProperty("Authorization", "Bearer $it") }
+            }
         }
         try {
             val code = connection.responseCode
+            check(code != 401 && code != 403) {
+                "${model.title} is gated: accept its licence on huggingface.co, then add your Hugging Face token in the search screen."
+            }
             check(code == 200 || code == 206) { "Download failed (HTTP $code)." }
             // A server that ignores Range sends the whole file again.
             val append = code == 206

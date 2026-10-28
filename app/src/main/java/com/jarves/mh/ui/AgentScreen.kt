@@ -195,7 +195,10 @@ fun AgentScreen(
     onDownloadLocalModel: (String) -> Unit = {},
     onDeleteLocalModel: (String) -> Unit = {},
     onRefreshLocalModels: () -> Unit = {},
-    onSearchHuggingFace: suspend (String) -> List<com.jarves.mh.network.HfRepo> = { emptyList() },
+    onSearchHuggingFace: suspend (String, Boolean) -> List<com.jarves.mh.network.HfRepo> = { _, _ -> emptyList() },
+    onSearchHuggingFaceSection: suspend (com.jarves.mh.network.HfSection, Boolean) -> List<com.jarves.mh.network.HfRepo> = { _, _ -> emptyList() },
+    hasHuggingFaceToken: () -> Boolean = { false },
+    onSaveHuggingFaceToken: (String) -> Unit = {},
     onHuggingFaceFiles: suspend (String) -> List<com.jarves.mh.network.HfModelFile> = { emptyList() },
     onDownloadHuggingFace: (com.jarves.mh.network.HfModelFile) -> Unit = {},
 ) {
@@ -1152,6 +1155,9 @@ fun AgentScreen(
                             onDelete = onDeleteLocalModel,
                             onRefresh = onRefreshLocalModels,
                             onSearchHuggingFace = onSearchHuggingFace,
+                            onSearchHuggingFaceSection = onSearchHuggingFaceSection,
+                            hasHuggingFaceToken = hasHuggingFaceToken,
+                            onSaveHuggingFaceToken = onSaveHuggingFaceToken,
                             onHuggingFaceFiles = onHuggingFaceFiles,
                             onDownloadHuggingFace = onDownloadHuggingFace,
                         )

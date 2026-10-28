@@ -2548,6 +2548,9 @@ private fun RootScreenHost(
                     onDeleteLocalModel = viewModel::deleteLocalModel,
                     onRefreshLocalModels = viewModel::refreshLocalModels,
                     onSearchHuggingFace = viewModel::searchHuggingFace,
+                    onSearchHuggingFaceSection = viewModel::searchHuggingFaceSection,
+                    hasHuggingFaceToken = viewModel::hasHuggingFaceToken,
+                    onSaveHuggingFaceToken = viewModel::setHuggingFaceToken,
                     onHuggingFaceFiles = viewModel::huggingFaceFiles,
                     onDownloadHuggingFace = viewModel::downloadHuggingFaceModel,
                 )

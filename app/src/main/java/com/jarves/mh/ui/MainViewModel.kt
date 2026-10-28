@@ -472,7 +472,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val agentRegistry = AgentRegistry.builtIns(dshRuntime, antigravityRuntime)
     private fun activeRuntime(): com.jarves.mh.runtime.RuntimeBridge = agentRegistry.require(_state.value.agentKind).runtime
     private val providerApi = ProviderApiClient(application)
-    private val localModelServer = com.jarves.mh.runtime.LocalModelServer(application)
+    private val localModelServer = com.jarves.mh.runtime.LocalModelServer(application) { vault.get(HUGGING_FACE_TOKEN) }
     private var localProgressJob: kotlinx.coroutines.Job? = null
     private fun appUpdater(): AppUpdater = AppUpdater(
         getApplication(),
@@ -4039,11 +4039,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    suspend fun searchHuggingFace(query: String): List<com.jarves.mh.network.HfRepo> =
-        withContext(Dispatchers.IO) { com.jarves.mh.network.HuggingFaceModels.search(query) }
+    suspend fun searchHuggingFace(query: String, onlyFits: Boolean): List<com.jarves.mh.network.HfRepo> =
+        withContext(Dispatchers.IO) {
+            com.jarves.mh.network.HuggingFaceModels.search(query, phoneMaxParameters(onlyFits), vault.get(HUGGING_FACE_TOKEN))
+        }
+
+    suspend fun searchHuggingFaceSection(section: com.jarves.mh.network.HfSection, onlyFits: Boolean): List<com.jarves.mh.network.HfRepo> =
+        withContext(Dispatchers.IO) {
+            com.jarves.mh.network.HuggingFaceModels.search(section, phoneMaxParameters(onlyFits), vault.get(HUGGING_FACE_TOKEN))
+        }
+
+    private fun phoneMaxParameters(onlyFits: Boolean): Long? =
+        if (onlyFits) com.jarves.mh.network.HuggingFaceModels.maxParametersFor(localModelServer.deviceRamGb()) else null
 
     suspend fun huggingFaceFiles(repo: String): List<com.jarves.mh.network.HfModelFile> =
-        withContext(Dispatchers.IO) { com.jarves.mh.network.HuggingFaceModels.files(repo) }
+        withContext(Dispatchers.IO) { com.jarves.mh.network.HuggingFaceModels.files(repo, vault.get(HUGGING_FACE_TOKEN)) }
+
+    fun hasHuggingFaceToken(): Boolean = vault.contains(HUGGING_FACE_TOKEN)
+
+    /** Blank removes the token. */
+    fun setHuggingFaceToken(token: String) {
+        val clean = token.trim().removePrefix("Bearer ").trim()
+        if (clean.isBlank()) vault.remove(HUGGING_FACE_TOKEN) else vault.put(HUGGING_FACE_TOKEN, clean)
+    }
 
     /** Adds a file found on Hugging Face to the phone's models and downloads it. */
     fun downloadHuggingFaceModel(file: com.jarves.mh.network.HfModelFile) {
@@ -5768,6 +5786,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         /** A long-running agent can poll a managed command hundreds of times. Keep the chat
          * responsive by retaining the latest useful steps instead of composing an unbounded list. */
         private const val MAX_VISIBLE_WORK_ITEMS = 32
+        /** Vault entry for the optional Hugging Face token used for gated models. */
+        private const val HUGGING_FACE_TOKEN = "HUGGINGFACE_TOKEN"
         private val DEFERRED_FOLDER_METADATA_NAMES = setOf(".git", ".gradle", "build", "node_modules")
         private const val MAX_ACTIVITY_DETAIL_CHARS = 8_000
         private const val NOISY_ITEM_SCAN_CHARS = 320

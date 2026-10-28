@@ -8,6 +8,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -47,6 +52,7 @@ import androidx.compose.ui.unit.sp
 import com.jarves.mh.R
 import com.jarves.mh.network.HfModelFile
 import com.jarves.mh.network.HfRepo
+import com.jarves.mh.network.HfSection
 import com.jarves.mh.network.HuggingFaceModels
 import com.jarves.mh.network.ModelFit
 import com.jarves.mh.ui.theme.PocketOrange
@@ -58,13 +64,20 @@ import kotlinx.coroutines.launch
 fun HuggingFaceSearchSheet(
     ramGb: Int,
     downloading: Boolean,
-    onSearch: suspend (String) -> List<HfRepo>,
+    onSearch: suspend (query: String, onlyFits: Boolean) -> List<HfRepo>,
+    onSearchSection: suspend (section: HfSection, onlyFits: Boolean) -> List<HfRepo>,
     onFiles: suspend (String) -> List<HfModelFile>,
     onDownload: (HfModelFile) -> Unit,
+    hasToken: Boolean,
+    onSaveToken: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
-    var query by rememberSaveable { mutableStateOf("coder instruct") }
+    var query by rememberSaveable { mutableStateOf("") }
+    var section by rememberSaveable { mutableStateOf<HfSection?>(HfSection.CODING) }
+    var tokenSaved by remember { mutableStateOf(hasToken) }
+    var showToken by rememberSaveable { mutableStateOf(false) }
+    var token by remember { mutableStateOf("") }
     var onlyFits by rememberSaveable { mutableStateOf(true) }
     var onlyTools by rememberSaveable { mutableStateOf(true) }
     var repos by remember { mutableStateOf<List<HfRepo>>(emptyList()) }
@@ -78,7 +91,8 @@ fun HuggingFaceSearchSheet(
             loading = true
             error = null
             openRepo = null
-            runCatching { onSearch(query) }
+            val selected = section
+            runCatching { if (selected != null) onSearchSection(selected, onlyFits) else onSearch(query, onlyFits) }
                 .onSuccess { repos = it }
                 .onFailure { error = it.message }
             loading = false
@@ -121,12 +135,24 @@ fun HuggingFaceSearchSheet(
                     onValueChange = { query = it },
                     singleLine = true,
                     label = { Text(stringResource(R.string.hf_search_hint)) },
-                    trailingIcon = { IconButton(onClick = ::search) { Icon(Icons.Default.Search, stringResource(R.string.hf_search)) } },
+                    trailingIcon = {
+                        IconButton(onClick = { section = null; search() }) { Icon(Icons.Default.Search, stringResource(R.string.hf_search)) }
+                    },
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                    keyboardActions = KeyboardActions(onSearch = { search() }),
+                    keyboardActions = KeyboardActions(onSearch = { section = null; search() }),
                     modifier = Modifier.fillMaxWidth(),
                 )
-                FilterRow(stringResource(R.string.hf_only_fits), onlyFits) { onlyFits = it }
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    HfSection.entries.forEach { entry ->
+                        FilterChip(
+                            selected = section == entry,
+                            onClick = { section = entry; query = ""; search() },
+                            label = { Text(stringResource(sectionLabel(entry))) },
+                        )
+                    }
+                }
+                // Fitting is filtered by Hugging Face itself, so changing it searches again.
+                FilterRow(stringResource(R.string.hf_only_fits), onlyFits) { onlyFits = it; search() }
                 FilterRow(stringResource(R.string.hf_only_tools), onlyTools) { onlyTools = it }
             }
 
@@ -146,6 +172,33 @@ fun HuggingFaceSearchSheet(
                 } else {
                     if (!loading && files.isEmpty()) item { Text(stringResource(R.string.hf_no_files), fontSize = 13.sp) }
                     items(files, key = { it.path }) { file -> FileRow(file, ramGb, enabled = !downloading) { onDownload(file); onDismiss() } }
+                }
+            }
+            if (openRepo == null) {
+                TextButton(onClick = { showToken = !showToken }) {
+                    Text(stringResource(if (tokenSaved) R.string.hf_token_saved else R.string.hf_token_title), color = PocketOrange)
+                }
+                if (showToken) {
+                    Text(stringResource(R.string.hf_token_desc), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    OutlinedTextField(
+                        value = token,
+                        onValueChange = { token = it },
+                        singleLine = true,
+                        label = { Text(stringResource(R.string.hf_token_field)) },
+                        visualTransformation = PasswordVisualTransformation(),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(
+                            onClick = { onSaveToken(token); tokenSaved = token.isNotBlank(); token = ""; showToken = false },
+                            enabled = token.isNotBlank(),
+                        ) { Text(stringResource(R.string.hf_token_save)) }
+                        if (tokenSaved) {
+                            TextButton(onClick = { onSaveToken(""); tokenSaved = false }) {
+                                Text(stringResource(R.string.hf_token_remove), color = MaterialTheme.colorScheme.error)
+                            }
+                        }
+                    }
                 }
             }
             androidx.compose.foundation.layout.Spacer(Modifier.size(16.dp))
@@ -172,6 +225,7 @@ private fun RepoRow(repo: HfRepo, ramGb: Int, onClick: () -> Unit) {
                     FitBadge(HuggingFaceModels.fit(HuggingFaceModels.estimatedQ4Bytes(parameters), ramGb))
                 }
                 if (repo.supportsTools) Badge(stringResource(R.string.hf_tools), PocketOrange)
+                if (repo.gated) Badge(stringResource(R.string.hf_gated), MaterialTheme.colorScheme.error)
                 Text(stringResource(R.string.hf_downloads, repo.downloads), fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
@@ -208,4 +262,12 @@ private fun Badge(text: String, color: Color) {
     Surface(shape = RoundedCornerShape(6.dp), color = color.copy(alpha = 0.16f)) {
         Text(text, color = color, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
     }
+}
+
+private fun sectionLabel(section: HfSection): Int = when (section) {
+    HfSection.CODING -> R.string.hf_section_coding
+    HfSection.UNCENSORED -> R.string.hf_section_uncensored
+    HfSection.SMALL -> R.string.hf_section_small
+    HfSection.REASONING -> R.string.hf_section_reasoning
+    HfSection.GENERAL -> R.string.hf_section_general
 }
