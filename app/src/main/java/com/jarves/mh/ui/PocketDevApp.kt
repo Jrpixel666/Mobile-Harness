@@ -2544,6 +2544,9 @@ private fun RootScreenHost(
                     onRefreshAntigravityModels = viewModel::refreshAntigravityModels,
                     onSetAntigravityModel = viewModel::setAntigravityModel,
                     onSetAntigravityEffort = viewModel::setAntigravityEffort,
+                    onDownloadLocalModel = viewModel::downloadLocalModel,
+                    onDeleteLocalModel = viewModel::deleteLocalModel,
+                    onRefreshLocalModels = viewModel::refreshLocalModels,
                 )
                 RootScreen.SETTINGS -> SettingsScreen(
                     state = state,
@@ -3018,6 +3021,7 @@ private fun providerTitleResource(provider: ProviderKind): Int = when (provider)
     ProviderKind.OPENCODE_ZEN -> R.string.provider_title_opencode
     ProviderKind.NVIDIA_NIM -> R.string.provider_title_nvidia
     ProviderKind.CUSTOM -> R.string.provider_title_custom
+    ProviderKind.LOCAL -> R.string.provider_title_local
 }
 
 @StringRes
@@ -3027,6 +3031,7 @@ private fun providerSubtitleResource(provider: ProviderKind): Int = when (provid
     ProviderKind.KIMI, ProviderKind.CUSTOM -> R.string.provider_subtitle_anthropic_compatible
     ProviderKind.OPENCODE_ZEN -> R.string.provider_subtitle_opencode
     ProviderKind.NVIDIA_NIM -> R.string.provider_subtitle_nvidia
+    ProviderKind.LOCAL -> R.string.provider_subtitle_local
 }
 
 @Composable
@@ -3042,6 +3047,7 @@ private fun ProviderChoiceRow(
         ProviderKind.OPENCODE_ZEN -> Color(0xFF22C55E)
         ProviderKind.NVIDIA_NIM -> Color(0xFF76B900)
         ProviderKind.CUSTOM -> PocketOrange
+        ProviderKind.LOCAL -> Color(0xFF2E9E5B)
     }
     val mark = when (provider) {
         ProviderKind.LLM_ROUTER -> "OR"
@@ -3050,6 +3056,7 @@ private fun ProviderChoiceRow(
         ProviderKind.OPENCODE_ZEN -> "Z"
         ProviderKind.NVIDIA_NIM -> "NV"
         ProviderKind.CUSTOM -> "<>"
+        ProviderKind.LOCAL -> "ON"
     }
 
     Row(
@@ -3150,7 +3157,7 @@ private fun ProviderCredentialsStep(
     var modelSearch by rememberSaveable { mutableStateOf("") }
     val modelSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     // Custom API servers that are self-hosted (llama.cpp, LM Studio…) often need no key.
-    val hasKey = apiKey.isNotBlank() || hasStoredSecret || provider == ProviderKind.CUSTOM
+    val hasKey = apiKey.isNotBlank() || hasStoredSecret || provider == ProviderKind.CUSTOM || provider == ProviderKind.LOCAL
     val filteredModels = remember(models, modelSearch) {
         val query = modelSearch.trim()
         if (query.isEmpty()) models else models.filter {

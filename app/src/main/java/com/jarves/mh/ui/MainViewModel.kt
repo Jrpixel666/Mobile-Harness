@@ -343,6 +343,12 @@ data class AppUiState(
     val githubProjectBusy: String? = null,
     val githubProjectMessage: String? = null,
     val githubProjectError: Boolean = false,
+    /** On-device models: which are downloaded, and the download in progress. */
+    val localModels: List<com.jarves.mh.runtime.LocalModelStatus> = emptyList(),
+    val localModelDownloading: String? = null,
+    val localModelProgress: Float = 0f,
+    val localModelMessage: String? = null,
+    val deviceRamGb: Int = 0,
     val activeProject: Project? = null,
     val workspaceVisible: Boolean = false,
     val readOnlyProject: Project? = null,
@@ -466,6 +472,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val agentRegistry = AgentRegistry.builtIns(dshRuntime, antigravityRuntime)
     private fun activeRuntime(): com.jarves.mh.runtime.RuntimeBridge = agentRegistry.require(_state.value.agentKind).runtime
     private val providerApi = ProviderApiClient(application)
+    private val localModelServer = com.jarves.mh.runtime.LocalModelServer(application)
     private fun appUpdater(): AppUpdater = AppUpdater(
         getApplication(),
         if (BuildConfig.DEBUG) preferences.debugUpdateManifestUrl else "",
@@ -2851,6 +2858,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     suspend fun discoverModels(profile: ProviderProfile, secret: String): ModelDiscoveryResult {
+        if (profile.kind == ProviderKind.LOCAL) {
+            val downloaded = localModelServer.statuses().filter { it.downloaded }
+            return if (downloaded.isEmpty()) {
+                ModelDiscoveryResult.Failure(str(R.string.local_none_downloaded))
+            } else {
+                ModelDiscoveryResult.Success(
+                    downloaded.map { com.jarves.mh.network.DiscoveredModel(it.model.id, it.model.title, isFree = true) },
+                    com.jarves.mh.runtime.LocalModelServer.BASE_URL,
+                )
+            }
+        }
         val key = secret.ifBlank { vault.get(profile.kind.name).orEmpty() }
         return providerApi.discoverModels(profile.baseUrl, key, providerProtocolForAgent(profile, _state.value.agentKind))
     }
@@ -2860,6 +2878,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         secret: String,
         models: List<com.jarves.mh.network.DiscoveredModel>,
     ): ConnectionValidation {
+        if (profile.kind == ProviderKind.LOCAL) {
+            runCatching { localModelServer.ensureRunning(profile.model) }.onFailure { error ->
+                return ConnectionValidation.Failure(error.message ?: str(R.string.vm_unknown_error))
+            }
+        }
         val key = secret.ifBlank { vault.get(profile.kind.name).orEmpty() }
         return providerApi.validate(
             profile.baseUrl,
@@ -3971,6 +3994,74 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun refreshLocalModels() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val statuses = localModelServer.statuses()
+            val ram = localModelServer.deviceRamGb()
+            _state.update { it.copy(localModels = statuses, deviceRamGb = ram) }
+        }
+    }
+
+    fun downloadLocalModel(modelId: String) {
+        val model = com.jarves.mh.runtime.LocalModelServer.CATALOG.firstOrNull { it.id == modelId } ?: return
+        if (_state.value.localModelDownloading != null) return
+        _state.update { it.copy(localModelDownloading = model.id, localModelProgress = 0f, localModelMessage = null) }
+        viewModelScope.launch {
+            val result = runCatching {
+                localModelServer.download(model) { done, total ->
+                    _state.update { it.copy(localModelProgress = if (total > 0) done.toFloat() / total else 0f) }
+                }
+            }
+            _state.update {
+                it.copy(
+                    localModelDownloading = null,
+                    localModelMessage = result.fold(
+                        onSuccess = { str(R.string.local_downloaded, model.title) },
+                        onFailure = { error -> error.message ?: str(R.string.vm_unknown_error) },
+                    ),
+                )
+            }
+            refreshLocalModels()
+        }
+    }
+
+    fun deleteLocalModel(modelId: String) {
+        val model = com.jarves.mh.runtime.LocalModelServer.CATALOG.firstOrNull { it.id == modelId } ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            localModelServer.delete(model)
+            refreshLocalModels()
+        }
+    }
+
+    /** Loads the on-device model before a task; reports failures in the chat like other runtime errors. */
+    private suspend fun startLocalModelIfNeeded(provider: ProviderProfile): Boolean {
+        if (provider.kind != ProviderKind.LOCAL) return true
+        _state.update { it.copy(liveProcess = it.liveProcess + ActivityItem(str(R.string.local_starting), provider.model, false)) }
+        return runCatching { localModelServer.ensureRunning(provider.model) }.fold(
+            onSuccess = { true },
+            onFailure = { error ->
+                val reason = error.message ?: str(R.string.vm_unknown_error)
+                val finishedAt = System.currentTimeMillis()
+                activeRuntimeRequest = null
+                _state.update {
+                    attachTaskDuration(
+                        finishWorkSegment(appendWorkItem(it, ActivityItem("Task stopped", reason)), finishedAt),
+                        finishedAt,
+                    ).copy(
+                        isRunning = false,
+                        activeSessionId = null,
+                        activity = listOf(ActivityItem("Task stopped", reason)) + it.activity,
+                        taskFinishedAtMillis = finishedAt,
+                        currentTaskRequest = null,
+                        toastMessage = reason,
+                    )
+                }
+                persistMessages()
+                false
+            },
+        )
+    }
+
     fun dismissGitHubProjectMessage() {
         _state.update { it.copy(githubProjectMessage = null, githubProjectError = false) }
     }
@@ -4982,6 +5073,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         )
         viewModelScope.launch {
             activeRuntimeRequest?.let { request ->
+                if (!startLocalModelIfNeeded(request.provider)) return@launch
                 request.runtime.startSession(
                     request.project.id,
                     request.project.slug,
@@ -5440,6 +5532,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         viewModelScope.launch {
             kotlinx.coroutines.delay(300)
+            if (!startLocalModelIfNeeded(request.provider)) return@launch
             request.runtime.startSession(
                 request.project.id,
                 request.project.slug,
@@ -5576,6 +5669,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     override fun onCleared() {
         stopAndroidLogcat()
+        localModelServer.stop()
         super.onCleared()
     }
 

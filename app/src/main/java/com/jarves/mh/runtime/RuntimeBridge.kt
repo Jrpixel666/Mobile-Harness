@@ -46,4 +46,4 @@ internal fun List<ChatMessage>.recentWithinCharacterBudget(maxCharacters: Int): 
  * CLIs refuse to start without one. Send a harmless placeholder that such servers ignore.
  */
 internal fun localServerPlaceholderKey(profile: ProviderProfile): String =
-    if (profile.kind == com.jarves.mh.model.ProviderKind.CUSTOM) "no-key-required" else ""
+    if (profile.kind == com.jarves.mh.model.ProviderKind.CUSTOM || profile.kind == com.jarves.mh.model.ProviderKind.LOCAL) "no-key-required" else ""

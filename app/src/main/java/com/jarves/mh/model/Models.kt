@@ -18,6 +18,15 @@ enum class ProviderKind(
     val fixedBaseUrl: Boolean = false,
     val fixedProtocol: Boolean = false,
 ) {
+    LOCAL(
+        "On-device model",
+        "Runs on this phone · no key or internet",
+        ProviderProtocol.OPENAI_CHAT,
+        "http://127.0.0.1:8181/v1",
+        "qwen2.5-coder-1.5b",
+        fixedBaseUrl = true,
+        fixedProtocol = true,
+    ),
     LLM_ROUTER("OpenRouter", "Use your OpenRouter API key", ProviderProtocol.OPENROUTER, "https://openrouter.ai/api", "qwen/qwen3-coder:free"),
     DEEPSEEK("DeepSeek", "Use your DeepSeek API key", ProviderProtocol.ANTHROPIC_GATEWAY, "https://api.deepseek.com/anthropic", "deepseek-v4-flash"),
     KIMI("Kimi", "Anthropic-compatible endpoint", ProviderProtocol.ANTHROPIC_GATEWAY, "https://api.moonshot.ai/anthropic", "kimi-k2.6", true),
@@ -75,6 +84,7 @@ enum class AgentKind(
 
 /** Provider kinds usable with [AgentKind.DEEPSEEK_HARNESS]. */
 val DEEPSEEK_HARNESS_PROVIDERS: Set<ProviderKind> = setOf(
+    ProviderKind.LOCAL,
     ProviderKind.DEEPSEEK,
     ProviderKind.LLM_ROUTER,
     ProviderKind.KIMI,
@@ -84,6 +94,7 @@ val DEEPSEEK_HARNESS_PROVIDERS: Set<ProviderKind> = setOf(
 )
 
 val DSH_PROTOCOL_PROVIDERS: Set<ProviderKind> = setOf(
+    ProviderKind.LOCAL,
     ProviderKind.KIMI,
     ProviderKind.OPENCODE_ZEN,
     ProviderKind.NVIDIA_NIM,
@@ -92,7 +103,7 @@ val DSH_PROTOCOL_PROVIDERS: Set<ProviderKind> = setOf(
 
 fun defaultDshApiForProvider(kind: ProviderKind): String = when (kind) {
     ProviderKind.OPENCODE_ZEN -> "openai-responses"
-    ProviderKind.NVIDIA_NIM -> "openai-completions"
+    ProviderKind.NVIDIA_NIM, ProviderKind.LOCAL -> "openai-completions"
     else -> "anthropic-messages"
 }
 

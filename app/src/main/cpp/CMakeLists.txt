@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22.1)
-project(mobile_harness_native C ASM)
+project(mobile_harness_native C CXX ASM)
 
 if(NOT ANDROID_ABI STREQUAL "arm64-v8a")
     message(FATAL_ERROR "Mobile Harness currently supports only arm64-v8a")
@@ -128,6 +128,38 @@ set_target_properties(prootloader-carrier PROPERTIES OUTPUT_NAME prootloader)
 add_dependencies(prootloader-carrier prootloader)
 add_custom_command(TARGET prootloader-carrier POST_BUILD
     COMMAND "${CMAKE_COMMAND}" -E copy "$<TARGET_FILE:prootloader>" "$<TARGET_FILE:prootloader-carrier>"
+)
+
+# On-device model server (llama.cpp's llama-server). The CPU backend is built in
+# every Android variant as a separate libggml-cpu-*.so; at runtime ggml loads the
+# best one for the phone's processor from the server's own directory.
+set(BUILD_SHARED_LIBS ON CACHE BOOL "" FORCE)
+foreach(option GGML_BACKEND_DL GGML_CPU_ALL_VARIANTS LLAMA_BUILD_COMMON LLAMA_BUILD_TOOLS LLAMA_BUILD_SERVER)
+    set(${option} ON CACHE BOOL "" FORCE)
+endforeach()
+foreach(option GGML_NATIVE GGML_OPENMP LLAMA_BUILD_TESTS LLAMA_BUILD_EXAMPLES LLAMA_BUILD_APP
+        LLAMA_BUILD_UI LLAMA_USE_PREBUILT_UI LLAMA_OPENSSL LLAMA_TOOLS_INSTALL)
+    set(${option} OFF CACHE BOOL "" FORCE)
+endforeach()
+set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,-z,max-page-size=16384")
+set(CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} -Wl,-z,max-page-size=16384")
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,max-page-size=16384")
+# Debug APKs would otherwise run the model unoptimised and unusably slowly; a
+# subdirectory takes these flags as they are when it is added.
+set(SAVED_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG}")
+set(SAVED_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
+set(CMAKE_C_FLAGS_DEBUG "-O3 -DNDEBUG")
+set(CMAKE_CXX_FLAGS_DEBUG "-O3 -DNDEBUG")
+# Only llama-server and what it needs are built, not the other llama.cpp tools.
+add_subdirectory("${PROJECT_ROOT}/third_party/llama.cpp" llama.cpp EXCLUDE_FROM_ALL)
+set(CMAKE_C_FLAGS_DEBUG "${SAVED_C_FLAGS_DEBUG}")
+set(CMAKE_CXX_FLAGS_DEBUG "${SAVED_CXX_FLAGS_DEBUG}")
+
+add_library(llamaserver-carrier SHARED executable_carrier.c)
+set_target_properties(llamaserver-carrier PROPERTIES OUTPUT_NAME llamaserver)
+add_dependencies(llamaserver-carrier llama-server)
+add_custom_command(TARGET llamaserver-carrier POST_BUILD
+    COMMAND "${CMAKE_COMMAND}" -E copy "$<TARGET_FILE:llama-server>" "$<TARGET_FILE:llamaserver-carrier>"
 )
 
 # The loader is copied verbatim into libprootloader.so, so it needs the same

@@ -25,6 +25,7 @@ fun ProviderKind.titleRes(): Int = when (this) {
     ProviderKind.OPENCODE_ZEN -> R.string.provider_title_opencode
     ProviderKind.NVIDIA_NIM -> R.string.provider_title_nvidia
     ProviderKind.CUSTOM -> R.string.provider_title_custom
+    ProviderKind.LOCAL -> R.string.provider_title_local
 }
 
 @StringRes
@@ -34,6 +35,7 @@ fun ProviderKind.subtitleRes(): Int = when (this) {
     ProviderKind.KIMI, ProviderKind.CUSTOM -> R.string.provider_subtitle_anthropic_compatible
     ProviderKind.OPENCODE_ZEN -> R.string.provider_subtitle_opencode
     ProviderKind.NVIDIA_NIM -> R.string.provider_subtitle_nvidia
+    ProviderKind.LOCAL -> R.string.provider_subtitle_local
 }
 
 @StringRes

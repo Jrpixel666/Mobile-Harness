@@ -86,6 +86,8 @@ android {
         providers.gradleProperty("appVersionName").orNull?.let { versionName = it }
 
         ndk.abiFilters += "arm64-v8a"
+        // llama.cpp is several shared libraries; they must share one C++ runtime.
+        externalNativeBuild.cmake.arguments += "-DANDROID_STL=c++_shared"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true

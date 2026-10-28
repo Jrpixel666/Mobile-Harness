@@ -4,3 +4,6 @@
 [submodule "third_party/libandroid-shmem"]
 	path = third_party/libandroid-shmem
 	url = https://github.com/termux/libandroid-shmem.git
+[submodule "third_party/llama.cpp"]
+	path = third_party/llama.cpp
+	url = https://github.com/ggml-org/llama.cpp.git

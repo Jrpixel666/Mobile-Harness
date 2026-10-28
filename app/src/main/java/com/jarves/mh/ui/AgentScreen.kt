@@ -192,6 +192,9 @@ fun AgentScreen(
     onRefreshAntigravityModels: () -> Unit = {},
     onSetAntigravityModel: (String) -> Unit = {},
     onSetAntigravityEffort: (String) -> Unit = {},
+    onDownloadLocalModel: (String) -> Unit = {},
+    onDeleteLocalModel: (String) -> Unit = {},
+    onRefreshLocalModels: () -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -1136,6 +1139,17 @@ fun AgentScreen(
                             }
                         },
                     )
+                    if (selectedKind == ProviderKind.LOCAL) {
+                        Spacer(Modifier.height(12.dp))
+                        LocalModelsCard(
+                            state = state,
+                            selectedModel = model,
+                            onSelect = { model = it; status = null; statusProviderMessage = null },
+                            onDownload = onDownloadLocalModel,
+                            onDelete = onDeleteLocalModel,
+                            onRefresh = onRefreshLocalModels,
+                        )
+                    }
                 }
             }
 
@@ -1738,6 +1752,8 @@ private fun AgentProviderCard(
                 }
             }
 
+            // The on-device model needs no key.
+            if (selectedKind != ProviderKind.LOCAL) {
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
 
             PremiumSummaryRow(
@@ -1870,11 +1886,12 @@ private fun AgentProviderCard(
                     }
                 }
             }
+            }
 
             Spacer(Modifier.height(12.dp))
             OutlinedButton(
                 onClick = onValidate,
-                enabled = (apiKey.isNotBlank() || selectedKind == ProviderKind.CUSTOM) && !isDiscovering && !isValidating &&
+                enabled = (apiKey.isNotBlank() || selectedKind == ProviderKind.CUSTOM || selectedKind == ProviderKind.LOCAL) && !isDiscovering && !isValidating &&
                     baseUrl.isNotBlank() && model.isNotBlank(),
                 modifier = Modifier.fillMaxWidth().height(46.dp),
                 shape = RoundedCornerShape(13.dp),
@@ -2108,6 +2125,7 @@ private fun defaultModelsForProvider(kind: ProviderKind, context: android.conten
     ProviderKind.NVIDIA_NIM -> listOf(
         DiscoveredModel(ProviderKind.NVIDIA_NIM.defaultModel, "Qwen 2.5 Coder 32B"),
     )
+    ProviderKind.LOCAL -> com.jarves.mh.runtime.LocalModelServer.CATALOG.map { DiscoveredModel(it.id, it.title) }
     ProviderKind.LLM_ROUTER -> listOf(
         DiscoveredModel("qwen/qwen3-coder:free", "Qwen3 Coder (free)"),
         DiscoveredModel("deepseek/deepseek-r1", "DeepSeek R1 (via OpenRouter)"),

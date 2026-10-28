@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- On-device model provider: llama.cpp running GGUF models on the phone. -->
+    <string name="provider_title_local">On-device model</string>
+    <string name="provider_subtitle_local">Runs on this phone · no key or internet</string>
+    <string name="local_title">Models on this phone</string>
+    <string name="local_desc">Download a model once; after that it runs offline. Bigger models write better code but are slower and need more memory. This phone has about %1$d GB of RAM.</string>
+    <string name="local_size">%1$s GB · needs %2$d GB RAM</string>
+    <string name="local_size_warning">%1$s GB · needs %2$d GB RAM, may be too big for this phone</string>
+    <string name="local_download">Download</string>
+    <string name="local_delete">Delete</string>
+    <string name="local_downloaded">%1$s is ready. Select it, then save.</string>
+    <string name="local_none_downloaded">Download a model below first.</string>
+    <string name="local_starting">Loading the on-device model</string>
+</resources>

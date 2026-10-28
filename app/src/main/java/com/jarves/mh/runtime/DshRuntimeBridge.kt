@@ -749,6 +749,12 @@ internal object DshRouteMapper {
                 defaultModel = model,
                 custom = DshCustomRoute("openai-completions", profile.resolvedBaseUrl),
             )
+            ProviderKind.LOCAL -> DshRoute(
+                name = "on-device",
+                keyEnv = DshRuntimeBridge.FALLBACK_KEY_ENV,
+                defaultModel = model,
+                custom = DshCustomRoute("openai-completions", profile.resolvedBaseUrl),
+            )
             ProviderKind.CUSTOM -> DshRoute(
                 name = "mh-custom",
                 keyEnv = DshRuntimeBridge.FALLBACK_KEY_ENV,
