@@ -114,6 +114,20 @@ class LocalModelServer(
 
     fun statuses(): List<LocalModelStatus> = models().map { LocalModelStatus(it, isDownloaded(it)) }
 
+    /** RAM, fast cores, ARM features and free space, for "Scan this phone". */
+    fun deviceProfile(): com.jarves.mh.network.DeviceProfile {
+        val features = runCatching {
+            com.jarves.mh.network.ModelRecommender.cpuFeatures(File("/proc/cpuinfo").readText())
+        }.getOrDefault(emptySet())
+        return com.jarves.mh.network.DeviceProfile(
+            ramGb = deviceRamGb(),
+            fastCores = performanceCores(coreMaxFrequencies()),
+            dotProd = "asimddp" in features,
+            int8Matmul = "i8mm" in features,
+            freeStorageBytes = modelsDir.usableSpace,
+        )
+    }
+
     fun deviceRamGb(): Int {
         val info = ActivityManager.MemoryInfo()
         app.getSystemService(ActivityManager::class.java).getMemoryInfo(info)

@@ -4055,6 +4055,30 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     suspend fun huggingFaceFiles(repo: String): List<com.jarves.mh.network.HfModelFile> =
         withContext(Dispatchers.IO) { com.jarves.mh.network.HuggingFaceModels.files(repo, vault.get(HUGGING_FACE_TOKEN)) }
 
+    suspend fun deviceProfile(): com.jarves.mh.network.DeviceProfile =
+        withContext(Dispatchers.IO) { localModelServer.deviceProfile() }
+
+    /** Looks through the scan sections for models that fit and picks a file for each. */
+    suspend fun scanForModels(device: com.jarves.mh.network.DeviceProfile): List<com.jarves.mh.network.ModelRecommendation> =
+        withContext(Dispatchers.IO) {
+            val token = vault.get(HUGGING_FACE_TOKEN)
+            val cap = com.jarves.mh.network.HuggingFaceModels.maxParametersFor(device.ramGb)
+            val seen = mutableSetOf<String>()
+            com.jarves.mh.network.ModelRecommender.SCAN_SECTIONS.flatMap { section ->
+                val repos = com.jarves.mh.network.HuggingFaceModels.search(section, cap, token).filter { it.id !in seen }
+                com.jarves.mh.network.ModelRecommender.candidates(repos, device, supportedLlamaArchitectures()).mapNotNull { repo ->
+                    val files = runCatching { com.jarves.mh.network.HuggingFaceModels.files(repo.id, token) }.getOrDefault(emptyList())
+                    com.jarves.mh.network.ModelRecommender.bestFile(files, device)?.let { file ->
+                        seen += repo.id
+                        com.jarves.mh.network.ModelRecommendation(section, repo, file)
+                    }
+                }
+            }
+        }
+
+    fun supportedLlamaArchitectures(): Set<String> =
+        BuildConfig.LLAMA_ARCHITECTURES.split(',').filter(String::isNotBlank).toSet()
+
     fun hasHuggingFaceToken(): Boolean = vault.contains(HUGGING_FACE_TOKEN)
 
     /** Blank removes the token. */

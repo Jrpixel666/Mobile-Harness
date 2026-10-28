@@ -199,6 +199,9 @@ fun AgentScreen(
     onSearchHuggingFaceSection: suspend (com.jarves.mh.network.HfSection, Boolean) -> List<com.jarves.mh.network.HfRepo> = { _, _ -> emptyList() },
     hasHuggingFaceToken: () -> Boolean = { false },
     onSaveHuggingFaceToken: (String) -> Unit = {},
+    onDeviceProfile: suspend () -> com.jarves.mh.network.DeviceProfile = { com.jarves.mh.network.DeviceProfile(0, 0, false, false, 0) },
+    onScanForModels: suspend (com.jarves.mh.network.DeviceProfile) -> List<com.jarves.mh.network.ModelRecommendation> = { emptyList() },
+    supportedLlamaArchitectures: Set<String> = emptySet(),
     onHuggingFaceFiles: suspend (String) -> List<com.jarves.mh.network.HfModelFile> = { emptyList() },
     onDownloadHuggingFace: (com.jarves.mh.network.HfModelFile) -> Unit = {},
 ) {
@@ -1158,6 +1161,9 @@ fun AgentScreen(
                             onSearchHuggingFaceSection = onSearchHuggingFaceSection,
                             hasHuggingFaceToken = hasHuggingFaceToken,
                             onSaveHuggingFaceToken = onSaveHuggingFaceToken,
+                            onDeviceProfile = onDeviceProfile,
+                            onScanForModels = onScanForModels,
+                            supportedArchitectures = supportedLlamaArchitectures,
                             onHuggingFaceFiles = onHuggingFaceFiles,
                             onDownloadHuggingFace = onDownloadHuggingFace,
                         )

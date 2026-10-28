@@ -17,6 +17,8 @@ data class HfRepo(
     val supportsTools: Boolean,
     /** Downloads need the licence accepted on huggingface.co and a token. */
     val gated: Boolean = false,
+    /** GGUF architecture, such as "qwen2" or "gemma4". */
+    val architecture: String? = null,
 )
 
 /** Ready-made searches; each runs its queries and merges the results. */
@@ -79,6 +81,7 @@ object HuggingFaceModels {
                 downloads = item.optLong("downloads"),
                 likes = item.optLong("likes"),
                 parameters = gguf?.optLong("total")?.takeIf { it > 0 },
+                architecture = gguf?.optString("architecture")?.takeIf(String::isNotBlank),
                 supportsTools = gguf?.optString("chat_template").orEmpty().contains("tools"),
                 // "gated" is false, or the approval mode ("auto" / "manual").
                 gated = when (val gated = item.opt("gated")) {

@@ -53,6 +53,9 @@ import com.jarves.mh.R
 import com.jarves.mh.network.HfModelFile
 import com.jarves.mh.network.HfRepo
 import com.jarves.mh.network.HfSection
+import com.jarves.mh.network.DeviceProfile
+import com.jarves.mh.network.ModelRecommendation
+import androidx.compose.material3.Button
 import com.jarves.mh.network.HuggingFaceModels
 import com.jarves.mh.network.ModelFit
 import com.jarves.mh.ui.theme.PocketOrange
@@ -70,8 +73,14 @@ fun HuggingFaceSearchSheet(
     onDownload: (HfModelFile) -> Unit,
     hasToken: Boolean,
     onSaveToken: (String) -> Unit,
+    onDeviceProfile: suspend () -> DeviceProfile,
+    onScan: suspend (DeviceProfile) -> List<ModelRecommendation>,
+    supportedArchitectures: Set<String>,
     onDismiss: () -> Unit,
 ) {
+    var device by remember { mutableStateOf<DeviceProfile?>(null) }
+    var recommendations by remember { mutableStateOf<List<ModelRecommendation>?>(null) }
+    var scanning by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     var query by rememberSaveable { mutableStateOf("") }
     var section by rememberSaveable { mutableStateOf<HfSection?>(HfSection.CODING) }
@@ -112,24 +121,68 @@ fun HuggingFaceSearchSheet(
         }
     }
 
-    LaunchedEffect(Unit) { search() }
+    fun scan() {
+        scope.launch {
+            scanning = true
+            error = null
+            openRepo = null
+            runCatching {
+                val profile = onDeviceProfile()
+                device = profile
+                recommendations = onScan(profile)
+            }.onFailure { error = it.message }
+            scanning = false
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        device = runCatching { onDeviceProfile() }.getOrNull()
+        search()
+    }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                if (openRepo != null) {
-                    IconButton(onClick = { openRepo = null }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.hf_back)) }
+                if (openRepo != null || recommendations != null) {
+                    IconButton(onClick = { if (openRepo != null) openRepo = null else recommendations = null }) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.hf_back))
+                    }
                 }
                 Text(
-                    openRepo?.id ?: stringResource(R.string.hf_title),
+                    openRepo?.id ?: if (recommendations != null) stringResource(R.string.hf_scan_title) else stringResource(R.string.hf_title),
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.weight(1f),
                 )
             }
-            Text(stringResource(R.string.hf_device, ramGb), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            val profile = device
+            Text(
+                if (profile == null) stringResource(R.string.hf_device, ramGb) else stringResource(
+                    R.string.hf_device_profile,
+                    profile.ramGb,
+                    profile.fastCores,
+                    stringResource(
+                        when {
+                            profile.int8Matmul -> R.string.hf_cpu_i8mm
+                            profile.dotProd -> R.string.hf_cpu_dotprod
+                            else -> R.string.hf_cpu_basic
+                        },
+                    ),
+                    profile.freeStorageBytes / 1e9,
+                ),
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
 
-            if (openRepo == null) {
+            if (openRepo == null && recommendations == null) {
+                Button(onClick = ::scan, enabled = !scanning, modifier = Modifier.fillMaxWidth()) {
+                    if (scanning) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = Color.White)
+                    else Text(stringResource(R.string.hf_scan))
+                }
+            }
+            if (scanning) Text(stringResource(R.string.hf_scanning), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+            if (openRepo == null && recommendations == null) {
                 OutlinedTextField(
                     value = query,
                     onValueChange = { query = it },
@@ -161,20 +214,40 @@ fun HuggingFaceSearchSheet(
 
             LazyColumn(Modifier.fillMaxWidth().heightIn(max = 520.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 val repo = openRepo
-                if (repo == null) {
+                val found = recommendations
+                if (found != null && repo == null) {
+                    if (found.isEmpty()) item { Text(stringResource(R.string.hf_scan_none), fontSize = 13.sp) }
+                    found.groupBy { it.section }.forEach { (group, picks) ->
+                        item(key = "header-${group.name}") {
+                            Text(stringResource(sectionLabel(group)), fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 6.dp))
+                        }
+                        items(picks, key = { "${group.name}-${it.repo.id}" }) { pick ->
+                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text(pick.repo.id, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                                FileRow(pick.file, ramGb, enabled = !downloading) { onDownload(pick.file); onDismiss() }
+                            }
+                        }
+                    }
+                } else if (repo == null) {
                     val shown = repos.filter { item ->
                         (!onlyTools || item.supportsTools) &&
                             (!onlyFits || item.parameters == null ||
                                 HuggingFaceModels.fit(HuggingFaceModels.estimatedQ4Bytes(item.parameters), ramGb) != ModelFit.TOO_BIG)
                     }
                     if (!loading && shown.isEmpty()) item { Text(stringResource(R.string.hf_no_results), fontSize = 13.sp) }
-                    items(shown, key = { it.id }) { item -> RepoRow(item, ramGb) { open(item) } }
+                    items(shown, key = { it.id }) { item ->
+                        RepoRow(item, ramGb, com.jarves.mh.network.ModelRecommender.runnable(item, supportedArchitectures)) { open(item) }
+                    }
                 } else {
+                    val runnable = com.jarves.mh.network.ModelRecommender.runnable(repo, supportedArchitectures)
+                    if (!runnable) item { Text(stringResource(R.string.hf_wont_load_detail, repo.architecture.orEmpty()), color = MaterialTheme.colorScheme.error, fontSize = 13.sp) }
                     if (!loading && files.isEmpty()) item { Text(stringResource(R.string.hf_no_files), fontSize = 13.sp) }
-                    items(files, key = { it.path }) { file -> FileRow(file, ramGb, enabled = !downloading) { onDownload(file); onDismiss() } }
+                    items(files, key = { it.path }) { file ->
+                        FileRow(file, ramGb, enabled = !downloading && runnable) { onDownload(file); onDismiss() }
+                    }
                 }
             }
-            if (openRepo == null) {
+            if (openRepo == null && recommendations == null) {
                 TextButton(onClick = { showToken = !showToken }) {
                     Text(stringResource(if (tokenSaved) R.string.hf_token_saved else R.string.hf_token_title), color = PocketOrange)
                 }
@@ -215,7 +288,7 @@ private fun FilterRow(label: String, checked: Boolean, onChange: (Boolean) -> Un
 }
 
 @Composable
-private fun RepoRow(repo: HfRepo, ramGb: Int, onClick: () -> Unit) {
+private fun RepoRow(repo: HfRepo, ramGb: Int, runnable: Boolean, onClick: () -> Unit) {
     Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(repo.id, fontWeight = FontWeight.Medium, fontSize = 14.sp)
@@ -226,6 +299,7 @@ private fun RepoRow(repo: HfRepo, ramGb: Int, onClick: () -> Unit) {
                 }
                 if (repo.supportsTools) Badge(stringResource(R.string.hf_tools), PocketOrange)
                 if (repo.gated) Badge(stringResource(R.string.hf_gated), MaterialTheme.colorScheme.error)
+                if (!runnable) Badge(stringResource(R.string.hf_wont_load), MaterialTheme.colorScheme.error)
                 Text(stringResource(R.string.hf_downloads, repo.downloads), fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }

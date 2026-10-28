@@ -48,6 +48,14 @@ val prepareOfflineRuntimeAssets = tasks.register<Sync>("prepareOfflineRuntimeAss
     into(generatedRuntimeAssets.map { it.dir("offline/runtime") })
 }
 
+/** Model architectures the bundled llama.cpp can load, read from its source so they never drift. */
+val llamaArchitectures: String = run {
+    val source = rootProject.file("third_party/llama.cpp/src/llama-arch.cpp")
+    if (!source.isFile) return@run ""
+    val table = source.readText().substringAfter("LLM_ARCH_NAMES = {").substringBefore("};")
+    Regex("\\{\\s*LLM_ARCH_\\w+\\s*,\\s*\"([^\"]+)\"").findAll(table).map { it.groupValues[1] }.joinToString(",")
+}
+
 fun buildConfigString(value: String): String =
     "\"${value.replace("\\", "\\\\").replace("\"", "\\\"")}\""
 
@@ -94,6 +102,7 @@ android {
 
         buildConfigField("boolean", "IS_PLAY_BUILD", playBuild.toString())
         buildConfigField("String", "PRIVACY_POLICY_URL", buildConfigString(privacyPolicyUrl))
+        buildConfigField("String", "LLAMA_ARCHITECTURES", buildConfigString(llamaArchitectures))
 
         buildConfigField(
             "String",

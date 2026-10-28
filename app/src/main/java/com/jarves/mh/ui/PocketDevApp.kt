@@ -2551,6 +2551,9 @@ private fun RootScreenHost(
                     onSearchHuggingFaceSection = viewModel::searchHuggingFaceSection,
                     hasHuggingFaceToken = viewModel::hasHuggingFaceToken,
                     onSaveHuggingFaceToken = viewModel::setHuggingFaceToken,
+                    onDeviceProfile = viewModel::deviceProfile,
+                    onScanForModels = viewModel::scanForModels,
+                    supportedLlamaArchitectures = remember { viewModel.supportedLlamaArchitectures() },
                     onHuggingFaceFiles = viewModel::huggingFaceFiles,
                     onDownloadHuggingFace = viewModel::downloadHuggingFaceModel,
                 )

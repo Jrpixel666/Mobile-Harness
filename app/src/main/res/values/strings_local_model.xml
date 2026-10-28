@@ -50,6 +50,16 @@
     <string name="hf_section_reasoning">Reasoning</string>
     <string name="hf_section_general">General chat</string>
     <string name="hf_gated">Gated</string>
+    <string name="hf_wont_load">Won\'t load</string>
+    <string name="hf_wont_load_detail">This app\'s llama.cpp cannot run \"%1$s\" models as a chat model, so they are not offered for download.</string>
+    <string name="hf_scan">Scan this phone and find models that work</string>
+    <string name="hf_scan_title">Recommended for this phone</string>
+    <string name="hf_scanning">Checking popular models against this phone…</string>
+    <string name="hf_scan_none">Nothing suitable found right now. Try the search, or free some storage.</string>
+    <string name="hf_device_profile">This phone: %1$d GB RAM · %2$d fast cores · %3$s · %4$.0f GB free.</string>
+    <string name="hf_cpu_i8mm">fast int8 math (best for Q4_0)</string>
+    <string name="hf_cpu_dotprod">dot-product math (good for Q4_0)</string>
+    <string name="hf_cpu_basic">basic ARM math</string>
     <string name="hf_token_title">Add a Hugging Face token (optional)</string>
     <string name="hf_token_saved">Hugging Face token saved · change</string>
     <string name="hf_token_desc">Only gated models (such as Llama or Gemma) need one. Accept the model\'s licence on huggingface.co, then create a read token under Settings → Access Tokens. It is stored encrypted on this phone and sent only to huggingface.co.</string>
